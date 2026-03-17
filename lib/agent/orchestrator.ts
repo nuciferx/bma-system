@@ -32,6 +32,11 @@ export async function orchestrate(req: OcrRequest): Promise<OcrResponse> {
         : Promise.resolve(null),
     ])
 
+    console.log(
+      `[orchestrator] ocr raw_text length=${newOcr.raw_text.length}`,
+      `preview: ${newOcr.raw_text.slice(0, 300).replace(/\n/g, ' ')}`
+    )
+
     if (!newOcr.raw_text.trim()) {
       return errorResponse('Gemini ไม่สามารถอ่านข้อความจากภาพได้')
     }
@@ -80,6 +85,13 @@ export async function orchestrate(req: OcrRequest): Promise<OcrResponse> {
       (claudeOutputTokens / 1_000_000) * 0.40
     const totalCostUsd = geminiCostUsd + claudeCostUsd
 
+    console.log(
+      `[orchestrator] form_data extracted:`,
+      `permit_no="${finalExtracted.form_data.permit_no}"`,
+      `officer_name="${finalExtracted.form_data.officer_name}"`,
+      `owner_name="${finalExtracted.form_data.owner_name}"`,
+      `missing=${(finalExtracted.missing_fields ?? []).join(',')}`
+    )
     console.log(
       `[orchestrator] done in ${Date.now() - startMs}ms`,
       `type=${finalExtracted.case_type}`,
