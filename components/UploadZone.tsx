@@ -36,7 +36,7 @@ async function pdfToThumbs(file: File, fileIndex: number): Promise<PageThumb[]> 
   const thumbs: PageThumb[] = []
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i)
-    const viewport = page.getViewport({ scale: 0.4 })
+    const viewport = page.getViewport({ scale: 1.5 })
     const canvas = document.createElement('canvas')
     canvas.width = viewport.width
     canvas.height = viewport.height
@@ -164,29 +164,29 @@ export default function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
             <p className="text-xs text-slate-400 mt-1">PDF, JPG, PNG</p>
           </div>
         ) : (
-          <div className="grid grid-cols-4 gap-2" onClick={e => e.stopPropagation()}>
+          <div className="grid grid-cols-2 gap-3" onClick={e => e.stopPropagation()}>
             {list.map((t, i) => (
               <div
                 key={i}
                 onClick={() => toggleThumb(i, isOld)}
-                className={`relative rounded-lg overflow-hidden border-2 cursor-pointer transition-all
+                className={`relative rounded-lg overflow-hidden border-2 cursor-pointer transition-all bg-slate-100
                   ${t.selected ? 'border-blue-500 shadow-md shadow-blue-200' : 'border-transparent opacity-50 grayscale'}`}
               >
-                <img src={t.dataUrl} alt={`หน้า ${t.pageNum}`} className="w-full h-24 object-cover" />
+                <img src={t.dataUrl} alt={`หน้า ${t.pageNum}`} className="w-full h-64 object-contain" />
                 <div className={`absolute inset-0 flex items-center justify-center transition-opacity
                   ${t.selected ? 'opacity-0 hover:opacity-100' : 'opacity-100'} bg-black/30`}>
-                  <span className="text-white text-xl">{t.selected ? '✓' : '+'}</span>
+                  <span className="text-white text-2xl">{t.selected ? '✓' : '+'}</span>
                 </div>
-                <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[10px] text-center py-0.5">
+                <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs text-center py-1 font-medium">
                   หน้า {t.pageNum}
                 </div>
               </div>
             ))}
             <div
               onClick={() => (isOld ? oldInputRef : inputRef).current?.click()}
-              className="border-2 border-dashed border-slate-300 rounded-lg h-24 flex items-center justify-center text-slate-400 hover:border-blue-400 hover:text-blue-400 cursor-pointer transition-colors"
+              className="border-2 border-dashed border-slate-300 rounded-lg h-64 flex items-center justify-center text-slate-400 hover:border-blue-400 hover:text-blue-400 cursor-pointer transition-colors"
             >
-              <span className="text-2xl">+</span>
+              <span className="text-3xl">+</span>
             </div>
           </div>
         )}
