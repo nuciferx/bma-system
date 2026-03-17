@@ -47,8 +47,8 @@ export default function DashboardPage() {
   }, [])
 
   const filtered = cases.filter(c =>
-    c.permit_no.toLowerCase().includes(search.toLowerCase()) ||
-    c.owner_name.toLowerCase().includes(search.toLowerCase())
+    (c.permit_no ?? '').toLowerCase().includes(search.toLowerCase()) ||
+    (c.owner_name ?? '').toLowerCase().includes(search.toLowerCase())
   )
 
   const CASE_TYPE_COLORS: Record<string, string> = {

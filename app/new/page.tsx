@@ -123,6 +123,8 @@ export default function NewCasePage() {
   const [form, setForm] = useState<FormData>({ ...EMPTY_FORM })
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [uploadedImages, setUploadedImages] = useState<string[]>([])
+  const [imagesOpen, setImagesOpen] = useState(false)
 
   const set = (key: keyof FormData, value: unknown) =>
     setForm(prev => ({ ...prev, [key]: value }))
@@ -191,7 +193,7 @@ export default function NewCasePage() {
           </div>
         </header>
         <main className="max-w-2xl mx-auto px-4 py-8 space-y-4">
-          <UploadZone onSubmit={handleOcr} isLoading={ocrLoading} />
+          <UploadZone onSubmit={handleOcr} isLoading={ocrLoading} onThumbs={setUploadedImages} />
           {ocrError && (
             <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-600 flex items-center gap-2">
               <span>⚠️</span> {ocrError}
@@ -229,7 +231,56 @@ export default function NewCasePage() {
         </button>
       </header>
 
-      <main className="max-w-2xl mx-auto px-4 py-6 space-y-5">
+      {/* Mobile image toggle */}
+      {uploadedImages.length > 0 && (
+        <div className="lg:hidden">
+          <button
+            onClick={() => setImagesOpen(v => !v)}
+            className="w-full flex items-center justify-between px-5 py-3 bg-slate-800 text-white text-sm font-medium"
+          >
+            <span className="flex items-center gap-2">
+              <span>📄</span>
+              <span>ดูเอกสาร ({uploadedImages.length} หน้า)</span>
+            </span>
+            <span className="text-slate-400 text-xs">{imagesOpen ? '▲ ซ่อน' : '▼ แสดง'}</span>
+          </button>
+          {imagesOpen && (
+            <div className="bg-slate-900 p-3 flex gap-3 overflow-x-auto">
+              {uploadedImages.map((url, i) => (
+                <div key={i} className="relative flex-shrink-0 w-44 rounded-lg overflow-hidden border border-slate-700">
+                  <img src={url} alt={`หน้า ${i + 1}`} className="w-full h-auto object-contain bg-white" />
+                  <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs text-center py-1 font-medium">
+                    หน้า {i + 1}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="flex min-h-[calc(100vh-65px)]">
+        {/* Desktop image panel */}
+        {uploadedImages.length > 0 && (
+          <aside className="hidden lg:flex flex-col w-[360px] flex-shrink-0 bg-slate-900 sticky top-[65px] h-[calc(100vh-65px)] overflow-y-auto">
+            <div className="px-4 pt-4 pb-2 border-b border-slate-700">
+              <p className="text-slate-300 text-xs font-semibold tracking-wide uppercase">เอกสารที่สแกน</p>
+              <p className="text-slate-500 text-xs mt-0.5">{uploadedImages.length} หน้า</p>
+            </div>
+            <div className="p-3 space-y-3 flex-1">
+              {uploadedImages.map((url, i) => (
+                <div key={i} className="relative rounded-xl overflow-hidden border border-slate-700 shadow-lg bg-white">
+                  <img src={url} alt={`หน้า ${i + 1}`} className="w-full h-auto object-contain" />
+                  <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs text-center py-1.5 font-semibold">
+                    หน้า {i + 1}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </aside>
+        )}
+
+        <main className={`flex-1 px-4 py-6 space-y-5 ${uploadedImages.length > 0 ? 'max-w-2xl' : 'max-w-2xl mx-auto'} w-full`}>
         {/* Type Banner */}
         {!typeConfirmed && confidence > 0 && (
           <TypeBanner
@@ -440,6 +491,7 @@ export default function NewCasePage() {
           {saving ? 'กำลังบันทึก…' : 'บันทึกและสร้างเอกสาร'}
         </button>
       </main>
+      </div>
     </div>
   )
 }

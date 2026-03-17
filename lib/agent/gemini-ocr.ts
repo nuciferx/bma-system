@@ -6,14 +6,12 @@
 
 import type { CaseType, FormData } from '@/types'
 
-// ─── Model ────────────────────────────────────────────────────
-const MODEL = 'gemini-2.5-flash'
-const PRICING = { input: 0.30, output: 2.50 } // per 1M tokens (USD)
+const GEMINI_MODEL = 'gemini-3-flash-preview'
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`
 
-// ยังคง export ไว้เพื่อ /api/model route
-export async function selectBestModel(_apiKey: string): Promise<string> {
-  return MODEL
-}
+// gemini-2.5-flash pricing
+const COST_INPUT_PER_1M  = 0.50
+const COST_OUTPUT_PER_1M = 3.00
 
 export interface GeminiExtractResult {
   case_type: CaseType
@@ -31,9 +29,35 @@ export interface GeminiExtractResult {
 }
 
 const EXTRACT_PROMPT = `คุณคือผู้เชี่ยวชาญอ่านเอกสารราชการไทย กองควบคุมอาคาร กทม.
-จากภาพที่ให้มา สกัดข้อมูลและตอบเป็น JSON เท่านั้น ห้ามมีข้อความอื่น ห้ามมี markdown ห้ามมี code block
-กฎเด็ดขาด: อ่านได้ชัดเจนเท่านั้นจึงใส่ข้อมูล ถ้าอ่านไม่เจอหรือไม่แน่ใจให้ใส่ "" ทันที ห้ามเดา ห้ามประมาณ ห้ามสร้างข้อมูลเอง โดยเฉพาะ ชื่อบุคคล เลขทะเบียน เลขที่ใบอนุญาต เลขรับ วันที่
-case_type: เห็น"ยผ.4"→D/E/F, เห็น"น.3"→B/BC, เห็น"น.5"/"น.7"→C/BC, ไม่เห็นน.x→A หรือ D
+จากภาพที่ให้มา สกัดข้อมูลทุก field ตอบเป็น JSON เท่านั้น ห้ามมีข้อความอื่น ห้ามมี markdown ห้ามมี code block
+
+ตาราง case_type:
+- A  = ต่ออายุ อ.1 ไม่มีการแจ้งผู้ควบคุม
+- B  = ต่ออายุ อ.1 + แจ้งชื่อผู้ควบคุมครั้งแรก (มีแบบ น.3+น.4)
+- C  = ต่ออายุ อ.1 + เปลี่ยนผู้ควบคุม (มีแบบ น.4+น.5+น.7)
+- BC = ต่ออายุ อ.1 + ทั้งแจ้งและเปลี่ยน (มีทั้ง น.3 และ น.5)
+- D  = ต่ออายุ ยผ.4 ไม่มีการแจ้งผู้ควบคุม
+- E  = ต่ออายุ ยผ.4 + แจ้งชื่อ
+- F  = ต่ออายุ ยผ.4 + เปลี่ยนผู้ควบคุม
+
+ตัวบ่งชี้ case_type:
+- เห็น "ยผ.4" → D/E/F
+- เห็น "น.3" → มีแจ้งชื่อใหม่
+- เห็น "น.5" หรือ "น.7" → มีเปลี่ยนผู้ควบคุม
+- ไม่เห็น น.x เลย → ไม่มีการแจ้ง
+
+กฎสำคัญ:
+- ห้ามเดาข้อมูลที่อ่านไม่เจอ ใส่ "" แทน แล้วใส่ชื่อ field นั้นใน missing_fields
+- วันที่คืนเป็น "DD/MM/YYYY" (พ.ศ.) หรือ "D เดือน YYYY" ตามที่อ่านได้
+- ค่าธรรมเนียม: ตัวเลขล้วน ไม่มีหน่วย
+- permit_form: "อ.1" หรือ "ยผ.4" เท่านั้น
+- orig_sup_status: "have" ถ้ามีผู้ควบคุมงานอยู่, "none" ถ้าไม่มี
+- supervisor_changes: action="new" = แจ้งชื่อครั้งแรก (มีแบบ น.3+น.4) → กรอก new_supervisors, ปล่อย from/to ว่าง
+- supervisor_changes: action="change" = เปลี่ยน (มีแบบ น.4+น.5+น.7) → กรอก from_supervisor+to_supervisor, ปล่อย new_supervisors ว่าง
+- supervisor_history: ประวัติครั้งก่อนที่ผู้ว่าฯ รับทราบแล้ว ถ้าไม่มีให้ใส่ []
+- ถ้าไม่มีการแจ้ง/เปลี่ยนผู้ควบคุมครั้งนี้ ให้ supervisor_changes = []
+
+JSON ที่ต้องคืน:
 {
   "case_type": "A หรือ B หรือ C หรือ BC หรือ D หรือ E หรือ F",
   "detection_note": "",
@@ -54,10 +78,31 @@ case_type: เห็น"ยผ.4"→D/E/F, เห็น"น.3"→B/BC, เห็
   "renew_from": "",
   "renew_to": "",
   "fee": "",
-  "original_supervisors": [{"name": "", "reg_no": "", "role": "", "is_new": false}],
-  "orig_sup_status": "have หรือ none",
-  "supervisor_changes": [],
-  "eia_status": "none หรือ approved",
+  "original_supervisors": [{"name":"","reg_no":"","role":""}],
+  "orig_sup_status": "have",
+  "supervisor_changes": [
+    {
+      "action": "new หรือ change",
+      "notice_receipt_no": "",
+      "notice_date": "",
+      "effective_date": "",
+      "form_type": "น.3+น.4 หรือ น.4+น.5+น.7",
+      "new_supervisors": [{"name":"","reg_no":"","role":""}],
+      "from_supervisor": {"name":"","reg_no":"","role":""},
+      "to_supervisor": {"name":"","reg_no":"","role":""}
+    }
+  ],
+  "supervisor_history": [
+    {
+      "receipt_no": "",
+      "date": "",
+      "action_detail": "",
+      "ack_doc_no": "",
+      "ack_doc_date": "",
+      "ack_date": ""
+    }
+  ],
+  "eia_status": "none",
   "eia_doc_no": "",
   "eia_doc_date": "",
   "traffic_status": "none หรือ approved",
@@ -148,12 +193,29 @@ export async function geminiOcr(
   try {
     parsed = JSON.parse(clean) as Record<string, unknown>
   } catch {
+    // depth-counter repair: handles truncated JSON (ported from GAS)
     const start = clean.indexOf('{')
-    const end   = clean.lastIndexOf('}')
-    if (start === -1 || end === -1) {
+    if (start === -1) {
       throw new Error('Gemini did not return valid JSON: ' + clean.slice(0, 200))
     }
-    parsed = JSON.parse(clean.slice(start, end + 1)) as Record<string, unknown>
+    let partial = clean.slice(start)
+    let depth = 0, inStr = false, esc = false
+    for (const ch of partial) {
+      if (esc)         { esc = false; continue }
+      if (ch === '\\') { esc = true;  continue }
+      if (ch === '"')  { inStr = !inStr; continue }
+      if (!inStr) {
+        if (ch === '{' || ch === '[') depth++
+        else if (ch === '}' || ch === ']') depth--
+      }
+    }
+    if (inStr)        partial += '"'
+    while (depth > 0) { partial += '}'; depth-- }
+    try {
+      parsed = JSON.parse(partial) as Record<string, unknown>
+    } catch {
+      throw new Error('Gemini did not return valid JSON: ' + clean.slice(0, 200))
+    }
   }
 
   const usage = json.usageMetadata ?? {}
