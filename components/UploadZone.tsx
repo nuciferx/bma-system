@@ -3,6 +3,15 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
 import type { OcrRequest, ScanMode } from '@/types'
 
+const OCR_STEPS = [
+  { label: 'กำลังเตรียมภาพ…',                    ms: 0    },
+  { label: 'ส่งภาพไปยัง Gemini AI…',              ms: 2000 },
+  { label: 'AI กำลังอ่านเอกสาร…',                ms: 5000 },
+  { label: 'กำลังสกัดข้อมูลจากภาพ…',             ms: 12000 },
+  { label: 'กำลังจัดโครงสร้างข้อมูล…',           ms: 22000 },
+  { label: 'รอผลลัพธ์… (อาจใช้เวลาสักครู่)',     ms: 35000 },
+]
+
 interface UploadZoneProps {
   onSubmit: (req: OcrRequest) => void
   isLoading: boolean
@@ -91,8 +100,24 @@ export default function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
   const [pdfReady, setPdfReady] = useState(false)
   const [currentModel, setCurrentModel] = useState<string | null>(null)
 
+  const [statusStep, setStatusStep] = useState(0)
+  const stepTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
+
   const inputRef = useRef<HTMLInputElement>(null)
   const oldInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    stepTimersRef.current.forEach(clearTimeout)
+    stepTimersRef.current = []
+    if (!isLoading) { setStatusStep(0); return }
+    setStatusStep(0)
+    OCR_STEPS.forEach((step, i) => {
+      if (i === 0) return
+      const t = setTimeout(() => setStatusStep(i), step.ms)
+      stepTimersRef.current.push(t)
+    })
+    return () => { stepTimersRef.current.forEach(clearTimeout) }
+  }, [isLoading])
 
   useEffect(() => {
     const script = document.createElement('script')
@@ -285,13 +310,18 @@ export default function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
         </div>
       )}
 
-      {/* Model info */}
-      {currentModel && (
-        <div className="flex items-center gap-1.5 text-xs text-slate-400">
-          <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block"></span>
-          <span>AI Model: <span className="font-medium text-slate-600">{currentModel}</span></span>
+      {/* Model info + version */}
+      <div className="flex items-center justify-between text-xs text-slate-400">
+        <div className="flex items-center gap-1.5">
+          {currentModel && (
+            <>
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block"></span>
+              <span>AI: <span className="font-medium text-slate-600">{currentModel}</span></span>
+            </>
+          )}
         </div>
-      )}
+        <span className="text-slate-300">v{process.env.NEXT_PUBLIC_APP_VERSION ?? '—'}</span>
+      </div>
 
       {/* Submit */}
       <button
@@ -312,6 +342,32 @@ export default function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
           </span>
         ) : `วิเคราะห์ ${selectedCount > 0 ? `(${selectedCount} หน้า)` : ''}`}
       </button>
+
+      {/* Status box during loading */}
+      {isLoading && (
+        <div className="bg-slate-900 rounded-xl p-4 space-y-2 text-xs font-mono">
+          {OCR_STEPS.map((step, i) => {
+            const done    = i < statusStep
+            const current = i === statusStep
+            const pending = i > statusStep
+            return (
+              <div key={i} className={`flex items-center gap-2 transition-opacity duration-300 ${pending ? 'opacity-25' : 'opacity-100'}`}>
+                {done    && <span className="text-green-400 w-3">✓</span>}
+                {current && (
+                  <svg className="animate-spin h-3 w-3 text-blue-400 flex-shrink-0" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                  </svg>
+                )}
+                {pending && <span className="text-slate-600 w-3">·</span>}
+                <span className={done ? 'text-green-400' : current ? 'text-blue-300' : 'text-slate-600'}>
+                  {step.label}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

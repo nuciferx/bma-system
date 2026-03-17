@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
     // @ts-expect-error — valid Vercel option, not yet in NextConfig types
     serverBodySizeLimit: '20mb',
   },
+  env: {
+    NEXT_PUBLIC_APP_VERSION: process.env.npm_package_version,
+  },
 }
 
 export default nextConfig
