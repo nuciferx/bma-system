@@ -61,6 +61,7 @@ export async function orchestrate(req: OcrRequest): Promise<OcrResponse> {
       missing_fields:        newResult.missing_fields,
       low_confidence_fields: newResult.low_confidence_fields,
       confidence:            newResult.confidence,
+      model:                 newResult.model,
       token_usage: {
         gemini_input:  totalInputTokens,
         gemini_output: totalOutputTokens,

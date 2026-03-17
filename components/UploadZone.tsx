@@ -89,6 +89,7 @@ export default function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [isOldDragging, setIsOldDragging] = useState(false)
   const [pdfReady, setPdfReady] = useState(false)
+  const [currentModel, setCurrentModel] = useState<string | null>(null)
 
   const inputRef = useRef<HTMLInputElement>(null)
   const oldInputRef = useRef<HTMLInputElement>(null)
@@ -102,6 +103,11 @@ export default function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
       setPdfReady(true)
     }
     document.head.appendChild(script)
+
+    fetch('/api/model')
+      .then(r => r.json())
+      .then(({ model }: { model: string }) => setCurrentModel(model))
+      .catch(() => {})
   }, [])
 
   const processFiles = useCallback(async (files: File[], isOld = false) => {
@@ -276,6 +282,14 @@ export default function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
             <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">โหมด C</span>
           </div>
           <DropArea isOld />
+        </div>
+      )}
+
+      {/* Model info */}
+      {currentModel && (
+        <div className="flex items-center gap-1.5 text-xs text-slate-400">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block"></span>
+          <span>AI Model: <span className="font-medium text-slate-600">{currentModel}</span></span>
         </div>
       )}
 

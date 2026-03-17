@@ -6,12 +6,74 @@
 
 import type { CaseType, FormData } from '@/types'
 
-const GEMINI_MODEL = 'gemini-2.5-flash'
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`
+// ─── Model Selection ──────────────────────────────────────────
+// ลำดับความสำคัญ: pro > flash, เวอร์ชันสูงกว่า = ดีกว่า
+const MODEL_PRIORITY = [
+  'gemini-2.5-pro',
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-1.5-pro',
+  'gemini-1.5-flash',
+]
 
-// gemini-2.5-flash pricing
-const COST_INPUT_PER_1M  = 0.30
-const COST_OUTPUT_PER_1M = 2.50
+// Pricing per 1M tokens (USD) — fallback ถ้าไม่รู้ model
+const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  'gemini-2.5-pro':   { input: 1.25, output: 10.00 },
+  'gemini-2.5-flash': { input: 0.30, output: 2.50  },
+  'gemini-2.0-flash': { input: 0.10, output: 0.40  },
+  'gemini-1.5-pro':   { input: 1.25, output: 5.00  },
+  'gemini-1.5-flash': { input: 0.075, output: 0.30 },
+}
+
+let _cachedModel: string | null = null
+let _cacheTime = 0
+const CACHE_TTL = 60 * 60 * 1000 // 1 ชั่วโมง
+
+export async function selectBestModel(apiKey: string): Promise<string> {
+  const now = Date.now()
+  if (_cachedModel && now - _cacheTime < CACHE_TTL) return _cachedModel
+
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}&pageSize=100`,
+      { signal: AbortSignal.timeout(5000) }
+    )
+    if (res.ok) {
+      const data = await res.json() as {
+        models?: Array<{ name: string; supportedGenerationMethods?: string[] }>
+      }
+      const available = (data.models ?? [])
+        .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
+        .map(m => m.name.replace('models/', ''))
+
+      for (const priority of MODEL_PRIORITY) {
+        // exact match ก่อน แล้วค่อย prefix match (เช่น gemini-2.5-flash-preview-xxx)
+        const match =
+          available.find(m => m === priority) ??
+          available.find(m => m.startsWith(priority))
+        if (match) {
+          _cachedModel = match
+          _cacheTime = now
+          console.log(`[gemini] selected model: ${match}`)
+          return match
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[gemini] model list fetch failed, using fallback:', e)
+  }
+
+  _cachedModel = 'gemini-2.0-flash'
+  _cacheTime = now
+  return _cachedModel
+}
+
+function getPricing(model: string) {
+  for (const [key, price] of Object.entries(MODEL_PRICING)) {
+    if (model.startsWith(key)) return price
+  }
+  return { input: 0.30, output: 2.50 } // default
+}
 
 export interface GeminiExtractResult {
   case_type: CaseType
@@ -107,6 +169,10 @@ export async function geminiOcr(
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error('GEMINI_API_KEY not set')
 
+  const model = await selectBestModel(apiKey)
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
+  const pricing = getPricing(model)
+
   const imageParts = base64Images.map((b64) => {
     const mimeType = detectMimeType(b64)
     const data = b64.replace(/^data:image\/\w+;base64,/, '')
@@ -133,7 +199,7 @@ export async function geminiOcr(
     },
   }
 
-  const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+  const res = await fetch(`${apiUrl}?key=${apiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -181,11 +247,11 @@ export async function geminiOcr(
     ? totalTokens - outputTokens
     : (usage.promptTokenCount ?? 0)
   const cost_usd =
-    (inputTokens  / 1_000_000) * COST_INPUT_PER_1M +
-    (outputTokens / 1_000_000) * COST_OUTPUT_PER_1M
+    (inputTokens  / 1_000_000) * pricing.input +
+    (outputTokens / 1_000_000) * pricing.output
 
   console.log(
-    `[gemini-ocr] label=${label} pages=${base64Images.length}`,
+    `[gemini-ocr] model=${model} label=${label} pages=${base64Images.length}`,
     `in=${inputTokens} out=${outputTokens}`,
     `cost=$${cost_usd.toFixed(5)}`,
     `case_type=${parsed.case_type ?? '?'}`,
@@ -216,7 +282,7 @@ export async function geminiOcr(
     low_confidence_fields: confidenceObj.low_fields ?? [],
     confidence:            confidenceObj,
     pages_read:            base64Images.length,
-    model:                 GEMINI_MODEL,
+    model,
     input_tokens:          inputTokens,
     output_tokens:         outputTokens,
     cost_usd,
