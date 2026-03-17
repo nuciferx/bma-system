@@ -1,0 +1,214 @@
+// app/api/cases/route.ts
+// GET  /api/cases?q=xxx — search + list
+// POST /api/cases       — save case + generate doc
+
+import { NextRequest, NextResponse } from 'next/server'
+import { searchBuildings, saveCase, getRecentBuildings } from '@/lib/db/actions'
+import { generateDoc } from '@/lib/docx/generator'
+import { createClient } from '@supabase/supabase-js'
+import type { Building, Action, FormData, CaseType } from '@/types'
+
+function getSupabase() {
+  return createClient(
+    (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL)!,
+    process.env.SUPABASE_SERVICE_KEY!
+  )
+}
+
+// ─── GET /api/cases ──────────────────────────────────────────
+export async function GET(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url)
+    const q = searchParams.get('q')?.trim() ?? ''
+    const limitStr = searchParams.get('limit') ?? '20'
+    const limit = Math.min(parseInt(limitStr, 10) || 20, 100)
+
+    const buildings = q
+      ? await searchBuildings(q)
+      : await getRecentBuildings(limit)
+
+    // ── metrics (simple) ─────────────────────────────────────
+    const supabase = getSupabase()
+    const now = new Date()
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+
+    const [monthRes] = await Promise.all([
+      supabase
+        .from('actions')
+        .select('action_id, form_data_snapshot', { count: 'exact' })
+        .gte('created_at', monthStart),
+    ])
+
+    const this_month_count = monthRes.count ?? 0
+
+    // รวม AI cost จาก token_usage ที่เก็บใน form_data_snapshot (ถ้ามี)
+    let ai_cost_thb = 0
+    if (monthRes.data) {
+      for (const row of monthRes.data) {
+        const snap = row.form_data_snapshot as Record<string, unknown> | null
+        const usage = snap?.token_usage as { cost_thb?: number } | undefined
+        ai_cost_thb += usage?.cost_thb ?? 0
+      }
+    }
+
+    // normalize cases สำหรับ dashboard
+    const cases = (buildings as Array<Record<string, unknown>>).map((b) => {
+      const actions = (b.actions as Array<Record<string, unknown>> | undefined) ?? []
+      const latest = actions[0] ?? {}
+      return {
+        id: b.building_id,
+        permit_no: b.permit_no,
+        owner_name: b.owner_name,
+        case_type: latest.case_type ?? 'unknown',
+        receipt_date: latest.doc_date ?? '',
+        renew_to: '',
+        created_at: latest.created_at ?? b.created_at,
+      }
+    })
+
+    return NextResponse.json({
+      cases,
+      metrics: {
+        this_month_count,
+        pending_count: 0,    // implement ทีหลัง
+        ai_cost_thb,
+      },
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error'
+    return NextResponse.json({ success: false, error: msg }, { status: 500 })
+  }
+}
+
+// ─── POST /api/cases ─────────────────────────────────────────
+// body: { formData, caseType, saveToDb }
+export async function POST(req: NextRequest) {
+  let body: { formData: FormData; caseType?: CaseType; saveToDb?: boolean }
+
+  try {
+    body = (await req.json()) as typeof body
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  const { formData, caseType = 'A', saveToDb = true } = body
+
+  if (!formData) {
+    return NextResponse.json({ error: 'formData is required' }, { status: 400 })
+  }
+
+  // Generate doc buffer
+  let buffer: Buffer
+  try {
+    buffer = await generateDoc(formData, caseType)
+  } catch (err) {
+    return NextResponse.json(
+      { error: `Document generation failed: ${String(err)}` },
+      { status: 500 }
+    )
+  }
+
+  const filename = buildFilename(formData)
+
+  // Preview mode — ไม่ save DB
+  if (!saveToDb) {
+    return new NextResponse(new Uint8Array(buffer), {
+      status: 200,
+      headers: {
+        'Content-Type':
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        'Content-Length': String(buffer.length),
+      },
+    })
+  }
+
+  // Upload to Supabase Storage
+  const supabase = getSupabase()
+  const storagePath = `docs/${Date.now()}_${filename}`
+  const { error: uploadErr } = await supabase.storage
+    .from('documents')
+    .upload(storagePath, buffer, {
+      contentType:
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      upsert: false,
+    })
+
+  if (uploadErr) {
+    return NextResponse.json(
+      { error: `Storage upload failed: ${uploadErr.message}` },
+      { status: 500 }
+    )
+  }
+
+  const { data: urlData } = supabase.storage.from('documents').getPublicUrl(storagePath)
+  const doc_url = urlData.publicUrl
+
+  // Build building + action objects
+  const building: Omit<Building, 'building_id' | 'created_at'> = {
+    permit_no: formData.permit_no,
+    permit_form: formData.permit_form,
+    permit_date: formData.permit_date,
+    owner_name: formData.owner_name,
+    owner_rep: formData.owner_rep,
+    building_desc: formData.building_desc,
+    location_soi: formData.location_soi,
+    location_road: formData.location_road,
+    location_subdistrict: formData.location_subdistrict,
+    location_district: formData.location_district,
+    permit_expire: formData.permit_expire,
+    original_supervisors: formData.original_supervisors,
+  }
+
+  const action: Omit<Action, 'action_id' | 'building_id' | 'created_at'> = {
+    case_type: caseType,
+    renew_count: formData.renew_count,
+    renew_from: formData.renew_from,
+    renew_to: formData.renew_to,
+    receipt_no: formData.receipt_no,
+    receipt_date: formData.receipt_date,
+    supervisors_snapshot: formData.original_supervisors,
+    supervisor_changes: formData.supervisor_changes,
+    supervisor_history: formData.supervisor_history,
+    ack_doc_no: '',
+    ack_doc_date: '',
+    fee: formData.fee,
+    eia_status: formData.eia_status,
+    eia_doc_no: formData.eia_doc_no,
+    eia_doc_date: formData.eia_doc_date,
+    construction_status: formData.construction_status,
+    complaint: formData.complaint,
+    complaint_detail: formData.complaint_detail,
+    form_data_snapshot: formData,
+    doc_url,
+    doc_date: formData.doc_date,
+  }
+
+  try {
+    const result = await saveCase(building, action)
+    return NextResponse.json({ doc_url, ...result }, { status: 200 })
+  } catch (err) {
+    return NextResponse.json(
+      { error: `Database save failed: ${String(err)}` },
+      { status: 500 }
+    )
+  }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────
+function buildFilename(formData: FormData): string {
+  const ownerSlug = (formData.owner_name ?? 'ไม่ระบุ')
+    .replace(/\s+/g, '_')
+    .replace(/[^\w\u0E00-\u0E7F]/g, '')
+
+  const rawDate = formData.doc_date ?? ''
+  let datePart = 'nodate'
+  if (rawDate.includes('/')) {
+    const [dd, mm, yyyy] = rawDate.split('/')
+    datePart = `${yyyy}${mm?.padStart(2, '0')}${dd?.padStart(2, '0')}`
+  } else if (rawDate.length >= 8) {
+    datePart = rawDate.replace(/-/g, '').slice(0, 8)
+  }
+
+  return `บันทึก_${ownerSlug}_${datePart}.docx`
+}
