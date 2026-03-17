@@ -36,6 +36,7 @@ const EMPTY_FORM: FormData = {
   supervisor_changes: [],
   supervisor_history: [],
   eia_status: 'none',
+  traffic_status: 'none',
   construction_status: '',
   complaint: 'none',
 }

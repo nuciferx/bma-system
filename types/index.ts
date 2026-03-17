@@ -103,6 +103,14 @@ export interface FormData {
   eia_doc_no?: string
   eia_doc_date?: string
 
+  // จราจร (traffic)
+  traffic_status: 'none' | 'approved'
+  traffic_doc_no?: string
+  traffic_doc_date?: string
+
+  // ต่อได้กี่ปี (default "๑")
+  extend_years?: string
+
   // การก่อสร้าง / ร้องเรียน
   construction_status: string
   complaint: 'none' | 'found'
@@ -125,11 +133,12 @@ export interface OcrResponse {
   form_data: Partial<FormData>
   missing_fields: string[]
   low_confidence_fields: string[]
+  confidence?: { overall: number; low_fields: string[] }
   token_usage: {
     gemini_input: number
     gemini_output: number
-    claude_input: number
-    claude_output: number
+    extract_input: number
+    extract_output: number
     cost_usd: number
     cost_thb: number
   }

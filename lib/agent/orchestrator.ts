@@ -2,116 +2,70 @@
 // ============================================================
 // Orchestrator — ควบคุม flow ทั้งหมด
 //
-// Flow:
+// Flow (simplified):
 //   1. รับ OcrRequest (images + mode)
-//   2. Gemini อ่านภาพ → raw text
-//   3. ดึง DB history ถ้า mode B
-//   4. Haiku แปลง text → FormData + detect type
-//   5. ถ้า confidence ต่ำ → retry
-//   6. คืน OcrResponse
+//   2. Gemini Vision อ่านภาพ → สกัด FormData + case_type โดยตรง
+//   3. คืน OcrResponse
 // ============================================================
 
 import { geminiOcr } from './gemini-ocr'
-import { extractForm } from './extract-form'
-import { getActionHistory } from '@/lib/db/actions'
-import type { OcrRequest, OcrResponse, SupervisorHistoryRecord } from '@/types'
+import type { OcrRequest, OcrResponse } from '@/types'
 
 const THB_PER_USD = 35
-const CONFIDENCE_THRESHOLD = 65
 
 export async function orchestrate(req: OcrRequest): Promise<OcrResponse> {
   const startMs = Date.now()
 
   try {
-    // ── Step 1: OCR ภาพด้วย Gemini ───────────────────────────
     // mode C: parallel — เรื่องเก่า + ครั้งนี้
-    const [newOcr, oldOcr] = await Promise.all([
+    const [newResult, oldResult] = await Promise.all([
       geminiOcr(req.new_doc_images, 'new'),
       req.mode === 'C' && req.old_doc_images?.length
         ? geminiOcr(req.old_doc_images, 'old')
         : Promise.resolve(null),
     ])
 
-    console.log(
-      `[orchestrator] ocr raw_text length=${newOcr.raw_text.length}`,
-      `preview: ${newOcr.raw_text.slice(0, 300).replace(/\n/g, ' ')}`
-    )
-
-    if (!newOcr.raw_text.trim()) {
-      return errorResponse('Gemini ไม่สามารถอ่านข้อความจากภาพได้')
+    if (!newResult.form_data || Object.keys(newResult.form_data).length === 0) {
+      return errorResponse('Gemini ไม่สามารถสกัดข้อมูลจากภาพได้')
     }
 
-    // ── Step 2: ดึงประวัติจาก DB (mode B เท่านั้น) ───────────
-    let dbHistory: SupervisorHistoryRecord[] = []
-    if (req.mode === 'B' && req.previous_case_id) {
-      dbHistory = await getActionHistory(req.previous_case_id)
-    }
-
-    // ── Step 3: Haiku แปลง text → FormData ───────────────────
-    const extracted = await extractForm(newOcr, dbHistory, oldOcr ?? undefined)
-
-    // ── Step 4: retry ถ้า confidence ต่ำ ─────────────────────
-    let finalExtracted = extracted
-    if (extracted.detection_confidence < CONFIDENCE_THRESHOLD) {
-      console.log(
-        `[orchestrator] confidence ต่ำ (${extracted.detection_confidence}%) → retry`
-      )
-      const retried = await extractForm(
-        {
-          ...newOcr,
-          raw_text:
-            newOcr.raw_text +
-            '\n\n[RETRY: ตรวจสอบอีกครั้ง เน้นดูแบบฟอร์มที่ระบุ ตรวจหา น.3 น.5 ยผ.4]',
-        },
-        dbHistory,
-        oldOcr ?? undefined
-      )
-      if (retried.detection_confidence > extracted.detection_confidence) {
-        finalExtracted = {
-          ...retried,
-          input_tokens: extracted.input_tokens + retried.input_tokens,
-          output_tokens: extracted.output_tokens + retried.output_tokens,
+    // mode C: merge ข้อมูลจากเรื่องเก่า (เติมเฉพาะ field ที่ยังว่าง)
+    let formData = { ...newResult.form_data }
+    if (oldResult) {
+      const oldForm = oldResult.form_data
+      for (const key of Object.keys(oldForm) as (keyof typeof oldForm)[]) {
+        if (!formData[key] && oldForm[key]) {
+          // @ts-ignore — dynamic merge
+          formData[key] = oldForm[key]
         }
       }
     }
 
-    // ── Step 5: คำนวณ cost รวม ────────────────────────────────
-    const geminiCostUsd = newOcr.cost_usd + (oldOcr?.cost_usd ?? 0)
-    const claudeInputTokens = finalExtracted.input_tokens
-    const claudeOutputTokens = finalExtracted.output_tokens
-    // Gemini Flash pricing: $0.10/1M input, $0.40/1M output
-    const claudeCostUsd =
-      (claudeInputTokens / 1_000_000) * 0.10 +
-      (claudeOutputTokens / 1_000_000) * 0.40
-    const totalCostUsd = geminiCostUsd + claudeCostUsd
+    const totalInputTokens  = newResult.input_tokens  + (oldResult?.input_tokens  ?? 0)
+    const totalOutputTokens = newResult.output_tokens + (oldResult?.output_tokens ?? 0)
+    const totalCostUsd      = newResult.cost_usd      + (oldResult?.cost_usd      ?? 0)
 
     console.log(
-      `[orchestrator] form_data extracted:`,
-      `permit_no="${finalExtracted.form_data.permit_no}"`,
-      `officer_name="${finalExtracted.form_data.officer_name}"`,
-      `owner_name="${finalExtracted.form_data.owner_name}"`,
-      `missing=${(finalExtracted.missing_fields ?? []).join(',')}`
-    )
-    console.log(
       `[orchestrator] done in ${Date.now() - startMs}ms`,
-      `type=${finalExtracted.case_type}`,
-      `confidence=${finalExtracted.detection_confidence}%`,
+      `case_type=${newResult.case_type}`,
+      `confidence=${newResult.detection_confidence}%`,
       `cost=$${totalCostUsd.toFixed(5)}`
     )
 
     return {
       success: true,
-      case_type: finalExtracted.case_type,
-      detection_confidence: finalExtracted.detection_confidence,
-      detection_note: finalExtracted.detection_note,
-      form_data: finalExtracted.form_data,
-      missing_fields: finalExtracted.missing_fields,
-      low_confidence_fields: finalExtracted.low_confidence_fields,
+      case_type:             newResult.case_type,
+      detection_confidence:  newResult.detection_confidence,
+      detection_note:        newResult.detection_note,
+      form_data:             formData,
+      missing_fields:        newResult.missing_fields,
+      low_confidence_fields: newResult.low_confidence_fields,
+      confidence:            newResult.confidence,
       token_usage: {
-        gemini_input: newOcr.input_tokens + (oldOcr?.input_tokens ?? 0),
-        gemini_output: newOcr.output_tokens + (oldOcr?.output_tokens ?? 0),
-        claude_input: claudeInputTokens,
-        claude_output: claudeOutputTokens,
+        gemini_input:  totalInputTokens,
+        gemini_output: totalOutputTokens,
+        extract_input:  0,
+        extract_output: 0,
         cost_usd: totalCostUsd,
         cost_thb: totalCostUsd * THB_PER_USD,
       },
@@ -133,10 +87,10 @@ function errorResponse(error: string): OcrResponse {
     missing_fields: [],
     low_confidence_fields: [],
     token_usage: {
-      gemini_input: 0,
+      gemini_input:  0,
       gemini_output: 0,
-      claude_input: 0,
-      claude_output: 0,
+      extract_input:  0,
+      extract_output: 0,
       cost_usd: 0,
       cost_thb: 0,
     },
