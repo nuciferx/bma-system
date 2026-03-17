@@ -6,73 +6,13 @@
 
 import type { CaseType, FormData } from '@/types'
 
-// ─── Model Selection ──────────────────────────────────────────
-// ลำดับความสำคัญสำหรับ OCR: flash > pro (เร็ว + แม่น, ไม่ต้องการ reasoning ลึก)
-const MODEL_PRIORITY = [
-  'gemini-2.5-flash',
-  'gemini-2.0-flash',
-  'gemini-2.5-pro',
-  'gemini-1.5-flash',
-  'gemini-1.5-pro',
-]
+// ─── Model ────────────────────────────────────────────────────
+const MODEL = 'gemini-2.5-flash'
+const PRICING = { input: 0.30, output: 2.50 } // per 1M tokens (USD)
 
-// Pricing per 1M tokens (USD) — fallback ถ้าไม่รู้ model
-const MODEL_PRICING: Record<string, { input: number; output: number }> = {
-  'gemini-2.5-pro':   { input: 1.25, output: 10.00 },
-  'gemini-2.5-flash': { input: 0.30, output: 2.50  },
-  'gemini-2.0-flash': { input: 0.10, output: 0.40  },
-  'gemini-1.5-pro':   { input: 1.25, output: 5.00  },
-  'gemini-1.5-flash': { input: 0.075, output: 0.30 },
-}
-
-let _cachedModel: string | null = null
-let _cacheTime = 0
-const CACHE_TTL = 60 * 60 * 1000 // 1 ชั่วโมง
-
-export async function selectBestModel(apiKey: string): Promise<string> {
-  const now = Date.now()
-  if (_cachedModel && now - _cacheTime < CACHE_TTL) return _cachedModel
-
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}&pageSize=100`,
-      { signal: AbortSignal.timeout(5000) }
-    )
-    if (res.ok) {
-      const data = await res.json() as {
-        models?: Array<{ name: string; supportedGenerationMethods?: string[] }>
-      }
-      const available = (data.models ?? [])
-        .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
-        .map(m => m.name.replace('models/', ''))
-
-      for (const priority of MODEL_PRIORITY) {
-        // exact match ก่อน แล้วค่อย prefix match (เช่น gemini-2.5-flash-preview-xxx)
-        const match =
-          available.find(m => m === priority) ??
-          available.find(m => m.startsWith(priority))
-        if (match) {
-          _cachedModel = match
-          _cacheTime = now
-          console.log(`[gemini] selected model: ${match}`)
-          return match
-        }
-      }
-    }
-  } catch (e) {
-    console.warn('[gemini] model list fetch failed, using fallback:', e)
-  }
-
-  _cachedModel = 'gemini-2.0-flash'
-  _cacheTime = now
-  return _cachedModel
-}
-
-function getPricing(model: string) {
-  for (const [key, price] of Object.entries(MODEL_PRICING)) {
-    if (model.startsWith(key)) return price
-  }
-  return { input: 0.30, output: 2.50 } // default
+// ยังคง export ไว้เพื่อ /api/model route
+export async function selectBestModel(_apiKey: string): Promise<string> {
+  return MODEL
 }
 
 export interface GeminiExtractResult {
@@ -91,13 +31,43 @@ export interface GeminiExtractResult {
 }
 
 const EXTRACT_PROMPT = `คุณคือผู้เชี่ยวชาญอ่านเอกสารราชการไทย กองควบคุมอาคาร กทม.
-จากภาพที่ให้มา สกัดข้อมูลและตอบเป็น JSON เท่านั้น ห้ามมีข้อความอื่น ห้ามมี markdown ห้ามมี code block ห้ามเดาข้อมูล ถ้าอ่านไม่เจอให้ใส่ "" แทน
-
-case_type: A=ต่ออายุอ.1ไม่มีผู้ควบคุม, B=อ.1+แจ้งน.3+น.4, C=อ.1+เปลี่ยนน.4+น.5+น.7, BC=อ.1+ทั้งสอง, D=ยผ.4ไม่มีผู้ควบคุม, E=ยผ.4+แจ้งชื่อ, F=ยผ.4+เปลี่ยน
-ดูจาก: เห็น"ยผ.4"→D/E/F, เห็น"น.3"→มีแจ้งชื่อ, เห็น"น.5"/"น.7"→มีเปลี่ยน, ไม่เห็นน.x→ไม่มีการแจ้ง
-วันที่: คืนเป็น "DD/MM/YYYY"(พ.ศ.) permit_form: "อ.1" หรือ "ยผ.4" เท่านั้น fee: ตัวเลขล้วน orig_sup_status: "have"/"none"
-
-{ "case_type":"A|B|C|BC|D|E|F|unknown", "detection_note":"", "owner_name":"", "owner_rep":"", "permit_no":"", "permit_form":"", "permit_date":"", "permit_expire":"", "building_desc":"", "location_soi":"", "location_road":"", "location_subdistrict":"", "location_district":"", "receipt_no":"", "receipt_date":"", "renew_count":"", "renew_from":"", "renew_to":"", "fee":"", "original_supervisors":[{"name":"","reg_no":"","role":""}], "orig_sup_status":"have", "supervisor_changes":[], "supervisor_history":[], "eia_status":"none", "eia_doc_no":"", "eia_doc_date":"", "traffic_status":"none", "traffic_doc_no":"", "traffic_doc_date":"", "construction_status":"", "complaint":"none", "complaint_detail":"", "ypo4_ack_date":"", "prev_extend_history":[], "confidence":{"overall":85,"low_fields":[]} }`
+จากภาพที่ให้มา สกัดข้อมูลและตอบเป็น JSON เท่านั้น ห้ามมีข้อความอื่น ห้ามมี markdown ห้ามมี code block:
+case_type: เห็น"ยผ.4"→D/E/F, เห็น"น.3"→B/BC, เห็น"น.5"/"น.7"→C/BC, ไม่เห็นน.x→A หรือ D
+{
+  "case_type": "A หรือ B หรือ C หรือ BC หรือ D หรือ E หรือ F",
+  "detection_note": "",
+  "owner_name": "",
+  "owner_rep": "",
+  "permit_no": "",
+  "permit_form": "อ.1 หรือ ยผ.4",
+  "permit_date": "",
+  "permit_expire": "",
+  "building_desc": "",
+  "location_soi": "",
+  "location_road": "",
+  "location_subdistrict": "",
+  "location_district": "",
+  "receipt_no": "",
+  "receipt_date": "",
+  "renew_count": "",
+  "renew_from": "",
+  "renew_to": "",
+  "fee": "",
+  "original_supervisors": [{"name": "", "reg_no": "", "role": "", "is_new": false}],
+  "orig_sup_status": "have หรือ none",
+  "supervisor_changes": [],
+  "eia_status": "none หรือ approved",
+  "eia_doc_no": "",
+  "eia_doc_date": "",
+  "traffic_status": "none หรือ approved",
+  "traffic_doc_no": "",
+  "traffic_doc_date": "",
+  "construction_status": "",
+  "complaint": "none หรือ found",
+  "complaint_detail": "",
+  "ypo4_ack_date": "",
+  "confidence": {"overall": 85, "low_fields": []}
+}`
 
 // detect mime type จาก data URL prefix
 function detectMimeType(b64: string): string {
@@ -114,9 +84,9 @@ export async function geminiOcr(
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error('GEMINI_API_KEY not set')
 
-  const model = await selectBestModel(apiKey)
+  const model = MODEL
   const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
-  const pricing = getPricing(model)
+  const pricing = PRICING
 
   const imageParts = base64Images.map((b64) => {
     const mimeType = detectMimeType(b64)
