@@ -7,13 +7,13 @@
 import type { CaseType, FormData } from '@/types'
 
 // ─── Model Selection ──────────────────────────────────────────
-// ลำดับความสำคัญ: pro > flash, เวอร์ชันสูงกว่า = ดีกว่า
+// ลำดับความสำคัญสำหรับ OCR: flash > pro (เร็ว + แม่น, ไม่ต้องการ reasoning ลึก)
 const MODEL_PRIORITY = [
-  'gemini-2.5-pro',
   'gemini-2.5-flash',
   'gemini-2.0-flash',
-  'gemini-1.5-pro',
+  'gemini-2.5-pro',
   'gemini-1.5-flash',
+  'gemini-1.5-pro',
 ]
 
 // Pricing per 1M tokens (USD) — fallback ถ้าไม่รู้ model
@@ -195,7 +195,7 @@ export async function geminiOcr(
     ],
     generationConfig: {
       temperature: 0.1,
-      maxOutputTokens: 65535,
+      maxOutputTokens: 8192,
     },
   }
 
