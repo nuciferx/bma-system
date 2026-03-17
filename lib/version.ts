@@ -1,2 +1,2 @@
 // เพิ่มตัวเลขนี้ทุกครั้งที่ deploy ครั้งใหม่
-export const APP_VERSION = 'v1.1.3'
+export const APP_VERSION = 'v1.2.0'
