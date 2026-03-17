@@ -2,13 +2,17 @@
 // ============================================================
 // Extract Form Tool
 // รับ raw text จาก Gemini → แปลงเป็น FormData + detect CaseType
-// ใช้ Claude Haiku
+// ใช้ Gemini Flash (text-only)
 // ============================================================
 
-import Anthropic from '@anthropic-ai/sdk'
 import type { CaseType, FormData, GeminiOcrResult, SupervisorHistoryRecord } from '@/types'
 
-const client = new Anthropic()
+const GEMINI_MODEL = 'gemini-2.0-flash'
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`
+
+// flash pricing: $0.10/1M input, $0.40/1M output
+const COST_INPUT_PER_1M = 0.10
+const COST_OUTPUT_PER_1M = 0.40
 
 export interface ExtractResult {
   case_type: CaseType
@@ -114,24 +118,42 @@ export async function extractForm(
   dbHistory: SupervisorHistoryRecord[] = [],
   oldDocOcr?: GeminiOcrResult
 ): Promise<ExtractResult> {
-  const prompt = buildPrompt(
-    newDocOcr.raw_text,
-    dbHistory,
-    oldDocOcr?.raw_text
-  )
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) throw new Error('GEMINI_API_KEY not set')
 
-  const response = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 4096,
-    messages: [{ role: 'user', content: prompt }],
+  const prompt = buildPrompt(newDocOcr.raw_text, dbHistory, oldDocOcr?.raw_text)
+
+  const payload = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0.1,
+      maxOutputTokens: 4096,
+    },
+  }
+
+  const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
   })
 
-  const raw = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map((b) => b.text)
-    .join('')
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`Gemini API error ${res.status}: ${err}`)
+  }
 
-  // clean markdown fences ถ้า Haiku ใส่มา
+  const json = await res.json() as {
+    error?: { message: string }
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
+    usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number }
+  }
+
+  if (json.error) throw new Error(json.error.message)
+
+  const raw = json.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+  if (!raw) throw new Error('extractForm: Gemini returned empty response')
+
+  // strip markdown fences if present
   const clean = raw
     .replace(/^```json\s*/gi, '')
     .replace(/^```\s*/gi, '')
@@ -142,16 +164,22 @@ export async function extractForm(
   try {
     parsed = JSON.parse(clean) as Record<string, unknown>
   } catch {
-    // หา JSON ที่ซ่อนอยู่
     const start = clean.indexOf('{')
     const end = clean.lastIndexOf('}')
     if (start === -1 || end === -1) {
-      throw new Error('extractForm: Haiku ไม่คืน JSON: ' + clean.slice(0, 200))
+      throw new Error('extractForm: Gemini did not return valid JSON: ' + clean.slice(0, 200))
     }
     parsed = JSON.parse(clean.slice(start, end + 1)) as Record<string, unknown>
   }
 
-  const usage = response.usage
+  const usage = json.usageMetadata ?? {}
+  const input_tokens = usage.promptTokenCount ?? 0
+  const output_tokens = usage.candidatesTokenCount ?? 0
+
+  console.log(
+    `[extract-form] in=${input_tokens} out=${output_tokens}`,
+    `cost=$${((input_tokens / 1_000_000) * COST_INPUT_PER_1M + (output_tokens / 1_000_000) * COST_OUTPUT_PER_1M).toFixed(5)}`
+  )
 
   return {
     case_type: (parsed.case_type as CaseType) ?? 'unknown',
@@ -160,7 +188,7 @@ export async function extractForm(
     form_data: (parsed.form_data as Partial<FormData>) ?? {},
     missing_fields: (parsed.missing_fields as string[]) ?? [],
     low_confidence_fields: (parsed.low_confidence_fields as string[]) ?? [],
-    input_tokens: usage.input_tokens,
-    output_tokens: usage.output_tokens,
+    input_tokens,
+    output_tokens,
   }
 }

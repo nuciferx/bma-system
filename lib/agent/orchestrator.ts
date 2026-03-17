@@ -74,10 +74,10 @@ export async function orchestrate(req: OcrRequest): Promise<OcrResponse> {
     const geminiCostUsd = newOcr.cost_usd + (oldOcr?.cost_usd ?? 0)
     const claudeInputTokens = finalExtracted.input_tokens
     const claudeOutputTokens = finalExtracted.output_tokens
-    // Haiku 4.5 pricing: $0.80/1M input, $4.00/1M output
+    // Gemini Flash pricing: $0.10/1M input, $0.40/1M output
     const claudeCostUsd =
-      (claudeInputTokens / 1_000_000) * 0.8 +
-      (claudeOutputTokens / 1_000_000) * 4.0
+      (claudeInputTokens / 1_000_000) * 0.10 +
+      (claudeOutputTokens / 1_000_000) * 0.40
     const totalCostUsd = geminiCostUsd + claudeCostUsd
 
     console.log(
