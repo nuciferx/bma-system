@@ -123,9 +123,10 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // Upload to Supabase Storage
+  // Upload to Supabase Storage (ASCII-only key)
   const supabase = getSupabase()
-  const storagePath = `docs/${Date.now()}_${filename}`
+  const safeKey = filename.replace(/[^\x00-\x7F]/g, '').replace(/^_+|_+$/g, '') || 'doc'
+  const storagePath = `docs/${Date.now()}_${safeKey}`
   const { error: uploadErr } = await supabase.storage
     .from('documents')
     .upload(storagePath, buffer, {
