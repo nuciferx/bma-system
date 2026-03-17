@@ -6,6 +6,7 @@ import type { OcrRequest, ScanMode } from '@/types'
 interface UploadZoneProps {
   onSubmit: (req: OcrRequest) => void
   isLoading: boolean
+  onThumbs?: (dataUrls: string[]) => void
 }
 
 interface PageThumb {
@@ -81,7 +82,7 @@ async function thumbToBase64Jpeg(dataUrl: string, maxPx = 1800): Promise<string>
   })
 }
 
-export default function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
+export default function UploadZone({ onSubmit, isLoading, onThumbs }: UploadZoneProps) {
   const [mode, setMode] = useState<ScanMode>('A')
   const [previousCaseId, setPreviousCaseId] = useState('')
   const [thumbs, setThumbs] = useState<PageThumb[]>([])
@@ -138,6 +139,7 @@ export default function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
 
   const handleSubmit = async () => {
     const selected = thumbs.filter(t => t.selected)
+    onThumbs?.(selected.map(t => t.dataUrl))
     const newImages = await Promise.all(selected.map(t => thumbToBase64Jpeg(t.dataUrl)))
     const req: OcrRequest = {
       new_doc_images: newImages,
