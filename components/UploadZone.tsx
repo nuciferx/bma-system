@@ -57,8 +57,28 @@ async function imageToThumb(file: File, fileIndex: number): Promise<PageThumb> {
   })
 }
 
-async function thumbToBase64Jpeg(dataUrl: string): Promise<string> {
-  return dataUrl.split(',')[1]
+async function thumbToBase64Jpeg(dataUrl: string, maxPx = 2000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      let w = img.naturalWidth
+      let h = img.naturalHeight
+      if (w > maxPx || h > maxPx) {
+        if (w > h) { h = Math.round(h * maxPx / w); w = maxPx }
+        else { w = Math.round(w * maxPx / h); h = maxPx }
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      const ctx = canvas.getContext('2d')!
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, w, h)
+      ctx.drawImage(img, 0, 0, w, h)
+      resolve(canvas.toDataURL('image/jpeg', 0.85).split(',')[1])
+    }
+    img.onerror = reject
+    img.src = dataUrl
+  })
 }
 
 export default function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
