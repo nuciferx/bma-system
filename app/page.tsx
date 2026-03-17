@@ -95,7 +95,7 @@ export default function DashboardPage() {
             ก
           </div>
           <div>
-            <h1 className="text-base font-bold text-slate-800 leading-none">ระบบงานอาคาร BMA</h1>
+            <h1 className="text-base font-bold text-slate-800 leading-none">ระบบสารสนเทศ งานควบคุมอาคาร</h1>
             <p className="text-xs text-slate-400 mt-0.5">กรุงเทพมหานคร · <span className="text-slate-300">{APP_VERSION}</span></p>
           </div>
         </div>

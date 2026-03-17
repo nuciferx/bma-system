@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'ระบบงานอาคาร BMA',
+  title: 'ระบบสารสนเทศ งานควบคุมอาคาร',
   description: 'กลุ่มควบคุมอาคาร สำนักการโยธา กรุงเทพมหานคร',
 }
 
