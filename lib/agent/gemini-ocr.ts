@@ -195,7 +195,7 @@ export async function geminiOcr(
     ],
     generationConfig: {
       temperature: 0.1,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 16384,
     },
   }
 
