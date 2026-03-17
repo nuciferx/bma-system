@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { APP_VERSION } from '@/lib/version'
 
 
 interface CaseSummary {
@@ -95,7 +96,7 @@ export default function DashboardPage() {
           </div>
           <div>
             <h1 className="text-base font-bold text-slate-800 leading-none">ระบบงานอาคาร BMA</h1>
-            <p className="text-xs text-slate-400 mt-0.5">กรุงเทพมหานคร</p>
+            <p className="text-xs text-slate-400 mt-0.5">กรุงเทพมหานคร · <span className="text-slate-300">{APP_VERSION}</span></p>
           </div>
         </div>
         <button
