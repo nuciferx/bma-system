@@ -91,68 +91,13 @@ export interface GeminiExtractResult {
 }
 
 const EXTRACT_PROMPT = `คุณคือผู้เชี่ยวชาญอ่านเอกสารราชการไทย กองควบคุมอาคาร กทม.
-จากภาพที่ให้มา สกัดข้อมูลทุก field ตอบเป็น JSON เท่านั้น ห้ามมีข้อความอื่น ห้ามมี markdown ห้ามมี code block
+จากภาพที่ให้มา สกัดข้อมูลและตอบเป็น JSON เท่านั้น ห้ามมีข้อความอื่น ห้ามมี markdown ห้ามมี code block ห้ามเดาข้อมูล ถ้าอ่านไม่เจอให้ใส่ "" แทน
 
-ตาราง case_type:
-- A  = ต่ออายุ อ.1 ไม่มีการแจ้งผู้ควบคุม
-- B  = ต่ออายุ อ.1 + แจ้งชื่อผู้ควบคุมครั้งแรก (มีแบบ น.3+น.4)
-- C  = ต่ออายุ อ.1 + เปลี่ยนผู้ควบคุม (มีแบบ น.4+น.5+น.7)
-- BC = ต่ออายุ อ.1 + ทั้งแจ้งและเปลี่ยน (มีทั้ง น.3 และ น.5)
-- D  = ต่ออายุ ยผ.4 ไม่มีการแจ้งผู้ควบคุม
-- E  = ต่ออายุ ยผ.4 + แจ้งชื่อ
-- F  = ต่ออายุ ยผ.4 + เปลี่ยนผู้ควบคุม
+case_type: A=ต่ออายุอ.1ไม่มีผู้ควบคุม, B=อ.1+แจ้งน.3+น.4, C=อ.1+เปลี่ยนน.4+น.5+น.7, BC=อ.1+ทั้งสอง, D=ยผ.4ไม่มีผู้ควบคุม, E=ยผ.4+แจ้งชื่อ, F=ยผ.4+เปลี่ยน
+ดูจาก: เห็น"ยผ.4"→D/E/F, เห็น"น.3"→มีแจ้งชื่อ, เห็น"น.5"/"น.7"→มีเปลี่ยน, ไม่เห็นน.x→ไม่มีการแจ้ง
+วันที่: คืนเป็น "DD/MM/YYYY"(พ.ศ.) permit_form: "อ.1" หรือ "ยผ.4" เท่านั้น fee: ตัวเลขล้วน orig_sup_status: "have"/"none"
 
-ตัวบ่งชี้ case_type:
-- เห็น "ยผ.4" → D/E/F
-- เห็น "น.3" → มีแจ้งชื่อใหม่
-- เห็น "น.5" หรือ "น.7" → มีเปลี่ยนผู้ควบคุม
-- ไม่เห็น น.x เลย → ไม่มีการแจ้ง
-
-กฎสำคัญ:
-- ห้ามเดาข้อมูลที่อ่านไม่เจอ ใส่ "" แทน แล้วใส่ชื่อ field นั้นใน missing_fields
-- วันที่คืนเป็น "DD/MM/YYYY" (พ.ศ.) หรือ "D เดือน YYYY" ตามที่อ่านได้
-- ค่าธรรมเนียม: ตัวเลขล้วน ไม่มีหน่วย
-- permit_form: "อ.1" หรือ "ยผ.4" เท่านั้น
-- orig_sup_status: "have" ถ้ามีผู้ควบคุมงานอยู่, "none" ถ้าไม่มี
-
-JSON ที่ต้องคืน:
-{
-  "case_type": "A|B|C|BC|D|E|F|unknown",
-  "detection_note": "อธิบายสั้นๆ ว่าเห็นอะไร",
-  "owner_name": "",
-  "owner_rep": "",
-  "permit_no": "",
-  "permit_form": "อ.1 หรือ ยผ.4",
-  "permit_date": "",
-  "permit_expire": "",
-  "building_desc": "",
-  "location_soi": "",
-  "location_road": "",
-  "location_subdistrict": "",
-  "location_district": "",
-  "receipt_no": "",
-  "receipt_date": "",
-  "renew_count": "",
-  "renew_from": "",
-  "renew_to": "",
-  "fee": "",
-  "original_supervisors": [{"name":"","reg_no":"","role":""}],
-  "orig_sup_status": "have",
-  "supervisor_changes": [],
-  "supervisor_history": [],
-  "eia_status": "none",
-  "eia_doc_no": "",
-  "eia_doc_date": "",
-  "traffic_status": "none",
-  "traffic_doc_no": "",
-  "traffic_doc_date": "",
-  "construction_status": "",
-  "complaint": "none",
-  "complaint_detail": "",
-  "ypo4_ack_date": "",
-  "prev_extend_history": [],
-  "confidence": { "overall": 85, "low_fields": [] }
-}`
+{ "case_type":"A|B|C|BC|D|E|F|unknown", "detection_note":"", "owner_name":"", "owner_rep":"", "permit_no":"", "permit_form":"", "permit_date":"", "permit_expire":"", "building_desc":"", "location_soi":"", "location_road":"", "location_subdistrict":"", "location_district":"", "receipt_no":"", "receipt_date":"", "renew_count":"", "renew_from":"", "renew_to":"", "fee":"", "original_supervisors":[{"name":"","reg_no":"","role":""}], "orig_sup_status":"have", "supervisor_changes":[], "supervisor_history":[], "eia_status":"none", "eia_doc_no":"", "eia_doc_date":"", "traffic_status":"none", "traffic_doc_no":"", "traffic_doc_date":"", "construction_status":"", "complaint":"none", "complaint_detail":"", "ypo4_ack_date":"", "prev_extend_history":[], "confidence":{"overall":85,"low_fields":[]} }`
 
 // detect mime type จาก data URL prefix
 function detectMimeType(b64: string): string {
