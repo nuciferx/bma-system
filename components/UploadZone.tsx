@@ -66,7 +66,9 @@ async function imageToThumb(file: File, fileIndex: number): Promise<PageThumb> {
   })
 }
 
-async function thumbToBase64Jpeg(dataUrl: string, maxPx = 1800): Promise<string> {
+const MAX_PAGES = 10
+
+async function thumbToBase64Jpeg(dataUrl: string, maxPx = 1200): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image()
     img.onload = () => {
@@ -184,6 +186,7 @@ export default function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
   }
 
   const selectedCount = thumbs.filter(t => t.selected).length
+  const tooManyPages = selectedCount > MAX_PAGES
 
   const DropArea = ({ isOld = false }: { isOld?: boolean }) => {
     const dragging = isOld ? isOldDragging : isDragging
@@ -310,6 +313,14 @@ export default function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
         </div>
       )}
 
+      {/* Too many pages warning */}
+      {tooManyPages && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 text-sm text-amber-700 flex items-center gap-2">
+          <span>⚠️</span>
+          <span>เลือกมากเกินไป ({selectedCount} หน้า) — อาจ timeout กรุณาเลือกไม่เกิน {MAX_PAGES} หน้า</span>
+        </div>
+      )}
+
       {/* Model info + version */}
       <div className="flex items-center justify-between text-xs text-slate-400">
         <div className="flex items-center gap-1.5">
@@ -326,9 +337,9 @@ export default function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
       {/* Submit */}
       <button
         onClick={handleSubmit}
-        disabled={isLoading || selectedCount === 0}
+        disabled={isLoading || selectedCount === 0 || tooManyPages}
         className={`w-full py-3.5 rounded-xl font-semibold text-sm transition-all
-          ${isLoading || selectedCount === 0
+          ${isLoading || selectedCount === 0 || tooManyPages
             ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
             : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-200 hover:shadow-xl hover:scale-[1.01] active:scale-[0.99]'}`}
       >
