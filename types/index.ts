@@ -134,6 +134,7 @@ export interface OcrResponse {
   missing_fields: string[]
   low_confidence_fields: string[]
   confidence?: { overall: number; low_fields: string[] }
+  model?: string
   token_usage: {
     gemini_input: number
     gemini_output: number

@@ -141,7 +141,13 @@ export default function NewCasePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(req),
       })
-      const data: OcrResponse = await res.json()
+      let data: OcrResponse
+      try {
+        data = await res.json()
+      } catch {
+        const text = await res.text().catch(() => `HTTP ${res.status}`)
+        throw new Error(`Server error: ${text.slice(0, 200)}`)
+      }
       if (!data.success) throw new Error(data.error ?? 'OCR failed')
       setCaseType(data.case_type)
       setConfidence(data.detection_confidence)

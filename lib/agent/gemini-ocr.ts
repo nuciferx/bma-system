@@ -59,8 +59,8 @@ const EXTRACT_PROMPT = `คุณคือผู้เชี่ยวชาญ�
 
 JSON ที่ต้องคืน:
 {
-  "case_type": "A|B|C|BC|D|E|F|unknown",
-  "detection_note": "อธิบายสั้นๆ ว่าเห็นอะไร",
+  "case_type": "A หรือ B หรือ C หรือ BC หรือ D หรือ E หรือ F",
+  "detection_note": "",
   "owner_name": "",
   "owner_rep": "",
   "permit_no": "",
@@ -105,15 +105,14 @@ JSON ที่ต้องคืน:
   "eia_status": "none",
   "eia_doc_no": "",
   "eia_doc_date": "",
-  "traffic_status": "none",
+  "traffic_status": "none หรือ approved",
   "traffic_doc_no": "",
   "traffic_doc_date": "",
   "construction_status": "",
-  "complaint": "none",
+  "complaint": "none หรือ found",
   "complaint_detail": "",
   "ypo4_ack_date": "",
-  "prev_extend_history": [],
-  "confidence": { "overall": 85, "low_fields": [] }
+  "confidence": {"overall": 85, "low_fields": []}
 }`
 
 // detect mime type จาก data URL prefix
@@ -130,6 +129,10 @@ export async function geminiOcr(
 ): Promise<GeminiExtractResult> {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error('GEMINI_API_KEY not set')
+
+  const model = MODEL
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
+  const pricing = PRICING
 
   const imageParts = base64Images.map((b64) => {
     const mimeType = detectMimeType(b64)
@@ -153,11 +156,11 @@ export async function geminiOcr(
     ],
     generationConfig: {
       temperature: 0.1,
-      maxOutputTokens: 65535,
+      maxOutputTokens: 16384,
     },
   }
 
-  const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+  const res = await fetch(`${apiUrl}?key=${apiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -222,11 +225,11 @@ export async function geminiOcr(
     ? totalTokens - outputTokens
     : (usage.promptTokenCount ?? 0)
   const cost_usd =
-    (inputTokens  / 1_000_000) * COST_INPUT_PER_1M +
-    (outputTokens / 1_000_000) * COST_OUTPUT_PER_1M
+    (inputTokens  / 1_000_000) * pricing.input +
+    (outputTokens / 1_000_000) * pricing.output
 
   console.log(
-    `[gemini-ocr] label=${label} pages=${base64Images.length}`,
+    `[gemini-ocr] model=${model} label=${label} pages=${base64Images.length}`,
     `in=${inputTokens} out=${outputTokens}`,
     `cost=$${cost_usd.toFixed(5)}`,
     `case_type=${parsed.case_type ?? '?'}`,
@@ -257,7 +260,7 @@ export async function geminiOcr(
     low_confidence_fields: confidenceObj.low_fields ?? [],
     confidence:            confidenceObj,
     pages_read:            base64Images.length,
-    model:                 GEMINI_MODEL,
+    model,
     input_tokens:          inputTokens,
     output_tokens:         outputTokens,
     cost_usd,
