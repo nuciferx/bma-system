@@ -57,7 +57,7 @@ async function imageToThumb(file: File, fileIndex: number): Promise<PageThumb> {
   })
 }
 
-async function thumbToBase64Jpeg(dataUrl: string, maxPx = 2000): Promise<string> {
+async function thumbToBase64Jpeg(dataUrl: string, maxPx = 1800): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image()
     img.onload = () => {

@@ -1,6 +1,8 @@
 // app/api/ocr/route.ts
 // POST /api/ocr — รับ images จาก frontend → orchestrator → OcrResponse
 
+export const maxDuration = 60 // Vercel: extend serverless timeout to 60s
+
 import { NextRequest, NextResponse } from 'next/server'
 import { orchestrate } from '@/lib/agent/orchestrator'
 import type { OcrRequest } from '@/types'
