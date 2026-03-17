@@ -52,6 +52,10 @@ const EXTRACT_PROMPT = `คุณคือผู้เชี่ยวชาญ�
 - ค่าธรรมเนียม: ตัวเลขล้วน ไม่มีหน่วย
 - permit_form: "อ.1" หรือ "ยผ.4" เท่านั้น
 - orig_sup_status: "have" ถ้ามีผู้ควบคุมงานอยู่, "none" ถ้าไม่มี
+- supervisor_changes: action="new" = แจ้งชื่อครั้งแรก (มีแบบ น.3+น.4) → กรอก new_supervisors, ปล่อย from/to ว่าง
+- supervisor_changes: action="change" = เปลี่ยน (มีแบบ น.4+น.5+น.7) → กรอก from_supervisor+to_supervisor, ปล่อย new_supervisors ว่าง
+- supervisor_history: ประวัติครั้งก่อนที่ผู้ว่าฯ รับทราบแล้ว ถ้าไม่มีให้ใส่ []
+- ถ้าไม่มีการแจ้ง/เปลี่ยนผู้ควบคุมครั้งนี้ ให้ supervisor_changes = []
 
 JSON ที่ต้องคืน:
 {
@@ -76,8 +80,28 @@ JSON ที่ต้องคืน:
   "fee": "",
   "original_supervisors": [{"name":"","reg_no":"","role":""}],
   "orig_sup_status": "have",
-  "supervisor_changes": [],
-  "supervisor_history": [],
+  "supervisor_changes": [
+    {
+      "action": "new หรือ change",
+      "notice_receipt_no": "",
+      "notice_date": "",
+      "effective_date": "",
+      "form_type": "น.3+น.4 หรือ น.4+น.5+น.7",
+      "new_supervisors": [{"name":"","reg_no":"","role":""}],
+      "from_supervisor": {"name":"","reg_no":"","role":""},
+      "to_supervisor": {"name":"","reg_no":"","role":""}
+    }
+  ],
+  "supervisor_history": [
+    {
+      "receipt_no": "",
+      "date": "",
+      "action_detail": "",
+      "ack_doc_no": "",
+      "ack_doc_date": "",
+      "ack_date": ""
+    }
+  ],
   "eia_status": "none",
   "eia_doc_no": "",
   "eia_doc_date": "",
@@ -166,12 +190,29 @@ export async function geminiOcr(
   try {
     parsed = JSON.parse(clean) as Record<string, unknown>
   } catch {
+    // depth-counter repair: handles truncated JSON (ported from GAS)
     const start = clean.indexOf('{')
-    const end   = clean.lastIndexOf('}')
-    if (start === -1 || end === -1) {
+    if (start === -1) {
       throw new Error('Gemini did not return valid JSON: ' + clean.slice(0, 200))
     }
-    parsed = JSON.parse(clean.slice(start, end + 1)) as Record<string, unknown>
+    let partial = clean.slice(start)
+    let depth = 0, inStr = false, esc = false
+    for (const ch of partial) {
+      if (esc)         { esc = false; continue }
+      if (ch === '\\') { esc = true;  continue }
+      if (ch === '"')  { inStr = !inStr; continue }
+      if (!inStr) {
+        if (ch === '{' || ch === '[') depth++
+        else if (ch === '}' || ch === ']') depth--
+      }
+    }
+    if (inStr)        partial += '"'
+    while (depth > 0) { partial += '}'; depth-- }
+    try {
+      parsed = JSON.parse(partial) as Record<string, unknown>
+    } catch {
+      throw new Error('Gemini did not return valid JSON: ' + clean.slice(0, 200))
+    }
   }
 
   const usage = json.usageMetadata ?? {}

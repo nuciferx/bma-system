@@ -383,7 +383,7 @@ async function generateFromScratch(
     text: string,
     opts: { bold?: boolean; center?: boolean; right?: boolean; indent?: boolean } = {}
   ) {
-    const run = new TextRun({ text, bold: opts.bold })
+    const run = new TextRun({ text: text.replace(/^\t/, ''), bold: opts.bold })
     return new Paragraph({
       children: [run],
       alignment: opts.center
