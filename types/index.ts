@@ -115,6 +115,18 @@ export interface FormData {
   construction_status: string
   complaint: 'none' | 'found'
   complaint_detail?: string
+
+  // AI token usage — บันทึกพร้อม form เพื่อรวม cost ใน dashboard
+  token_usage?: {
+    gemini_input: number
+    gemini_output: number
+    extract_input: number
+    extract_output: number
+    cost_usd: number
+    cost_thb: number
+    pages_read?: number
+    model?: string
+  }
 }
 
 // ─── OCR Request / Response ──────────────────────────────────

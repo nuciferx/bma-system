@@ -7,6 +7,7 @@ import TypeBanner from '@/components/TypeBanner'
 import SupervisorList from '@/components/SupervisorList'
 import ThaiDatePicker from '@/components/ThaiDatePicker'
 import type { OcrRequest, OcrResponse, FormData, CaseType, Supervisor } from '@/types'
+import TokenUsageCard, { type TokenUsage } from '@/components/TokenUsageCard'
 
 type Step = 'upload' | 'review'
 
@@ -123,6 +124,7 @@ export default function NewCasePage() {
   const [form, setForm] = useState<FormData>({ ...EMPTY_FORM })
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null)
   const [uploadedImages, setUploadedImages] = useState<string[]>([])
   const [imagesOpen, setImagesOpen] = useState(false)
 
@@ -153,7 +155,17 @@ export default function NewCasePage() {
       setConfidence(data.detection_confidence)
       setDetectionNote(data.detection_note)
       setMissingFields(data.missing_fields ?? [])
-      setForm({ ...EMPTY_FORM, ...data.form_data })
+      const usage: TokenUsage = {
+        ...data.token_usage,
+        pages_read: uploadedImages.length,
+        model: data.model,
+      }
+      setTokenUsage(usage)
+      setForm({
+        ...EMPTY_FORM,
+        ...data.form_data,
+        token_usage: usage,
+      })
       setStep('review')
     } catch (e) {
       setOcrError(e instanceof Error ? e.message : 'OCR ล้มเหลว')
@@ -281,6 +293,9 @@ export default function NewCasePage() {
         )}
 
         <main className={`flex-1 px-4 py-6 space-y-5 ${uploadedImages.length > 0 ? 'max-w-2xl' : 'max-w-2xl mx-auto'} w-full`}>
+        {/* Token Usage */}
+        {tokenUsage && <TokenUsageCard usage={tokenUsage} />}
+
         {/* Type Banner */}
         {!typeConfirmed && confidence > 0 && (
           <TypeBanner
@@ -429,10 +444,21 @@ export default function NewCasePage() {
           )}
         </Section>
 
-        {/* Supervisor Changes */}
-        <Section title="การแจ้ง / เปลี่ยนผู้ควบคุมครั้งนี้">
-          <SupervisorList changes={form.supervisor_changes} onChange={v => set('supervisor_changes', v)} />
-        </Section>
+        {/* Supervisor Changes — แยกออกมาชัดเจน */}
+        <div className="bg-white rounded-2xl border-2 border-orange-200 shadow-sm overflow-hidden">
+          <div className="px-5 py-3 border-b border-orange-100 bg-orange-50 flex items-center gap-2">
+            <span className="text-base">👷</span>
+            <h3 className="text-sm font-bold text-orange-800">การแจ้ง / เปลี่ยนผู้ควบคุมงาน</h3>
+            {form.supervisor_changes.length > 0 && (
+              <span className="ml-auto text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-semibold">
+                {form.supervisor_changes.length} รายการ
+              </span>
+            )}
+          </div>
+          <div className="px-5 py-4">
+            <SupervisorList changes={form.supervisor_changes} onChange={v => set('supervisor_changes', v)} />
+          </div>
+        </div>
 
         {/* EIA */}
         <Section title="EIA">
