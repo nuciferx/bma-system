@@ -1,6 +1,6 @@
 'use client'
 
-import { APP_VERSION } from '@/lib/version'
+import { APP_VERSION, AI_MODEL } from '@/lib/version'
 
 interface SidebarProps {
   activeSection: string
@@ -46,7 +46,7 @@ export default function Sidebar({ activeSection, onNavigate, onNewCase, isOpen, 
             <div className="min-w-0">
               <p className="text-sm font-bold text-slate-800 leading-tight">ระบบสารสนเทศ</p>
               <p className="text-xs text-slate-500 leading-tight">งานควบคุมอาคาร</p>
-              <p className="text-[10px] text-slate-300 mt-0.5">{APP_VERSION}</p>
+              <p className="text-[10px] text-slate-300 mt-0.5">{APP_VERSION} · {AI_MODEL}</p>
             </div>
           </div>
         </div>

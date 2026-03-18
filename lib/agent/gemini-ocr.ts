@@ -5,8 +5,9 @@
 // ============================================================
 
 import type { CaseType, FormData } from '@/types'
+import { AI_MODEL } from '@/lib/version'
 
-const MODEL = 'gemini-2.5-flash'
+const MODEL = AI_MODEL
 
 // gemini-2.5-flash pricing
 const PRICING = { input: 0.15, output: 0.60 }

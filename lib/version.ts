@@ -1,6 +1,9 @@
 // เพิ่มตัวเลขนี้ทุกครั้งที่ deploy ครั้งใหม่
 export const APP_VERSION = 'v1.3.0'
 
+// เปลี่ยนตรงนี้ที่เดียว — ทั้ง OCR pipeline และ UI จะอัปเดตตาม
+export const AI_MODEL = 'gemini-2.5-flash'
+
 /**
  * Changelog v1.3.0
  * - Chunked OCR: แบ่งรูปภาพส่ง Gemini ทีละ 2 รูป แล้ว merge ผลลัพธ์ (ลดข้อผิดพลาด + รองรับเอกสารยาว)
