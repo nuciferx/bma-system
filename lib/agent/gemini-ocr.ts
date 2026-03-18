@@ -6,7 +6,7 @@
 
 import type { CaseType, FormData } from '@/types'
 
-const MODEL = 'gemini-2.5-flash-preview-04-17'
+const MODEL = 'gemini-2.5-flash'
 
 // gemini-2.5-flash pricing
 const PRICING = { input: 0.15, output: 0.60 }
