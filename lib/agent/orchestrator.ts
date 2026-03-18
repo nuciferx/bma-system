@@ -8,7 +8,7 @@
 //   3. คืน OcrResponse
 // ============================================================
 
-import { geminiOcr } from './gemini-ocr'
+import { geminiOcrChunked } from './gemini-ocr'
 import type { OcrRequest, OcrResponse } from '@/types'
 
 const THB_PER_USD = 35
@@ -19,9 +19,9 @@ export async function orchestrate(req: OcrRequest): Promise<OcrResponse> {
   try {
     // mode C: parallel — เรื่องเก่า + ครั้งนี้
     const [newResult, oldResult] = await Promise.all([
-      geminiOcr(req.new_doc_images, 'new'),
+      geminiOcrChunked(req.new_doc_images, 'new'),
       req.mode === 'C' && req.old_doc_images?.length
-        ? geminiOcr(req.old_doc_images, 'old')
+        ? geminiOcrChunked(req.old_doc_images, 'old')
         : Promise.resolve(null),
     ])
 
