@@ -115,6 +115,108 @@ JSON ที่ต้องคืน:
   "confidence": {"overall": 85, "low_fields": []}
 }`
 
+// ──────────────────────────────────────────────────────────────
+// Array fields ที่ต้อง concatenate (ไม่ใช้ first-wins)
+// ──────────────────────────────────────────────────────────────
+const ARRAY_FIELDS = new Set([
+  'original_supervisors',
+  'supervisor_changes',
+  'supervisor_history',
+  'prev_extend_history',
+])
+
+function mergeChunkResults(results: GeminiExtractResult[]): GeminiExtractResult {
+  if (results.length === 1) return results[0]
+
+  // case_type จาก chunk ที่มี confidence สูงสุด
+  const best = results.reduce((a, b) =>
+    b.detection_confidence > a.detection_confidence ? b : a
+  )
+
+  // merge form_data: string → first non-empty wins, array → concat
+  const merged: Record<string, unknown> = {}
+  for (const result of results) {
+    for (const [k, v] of Object.entries(result.form_data)) {
+      if (ARRAY_FIELDS.has(k)) {
+        const existing = (merged[k] as unknown[] | undefined) ?? []
+        const incoming = Array.isArray(v) ? v : []
+        merged[k] = [...existing, ...incoming]
+      } else if (!merged[k] && v !== '' && v !== null && v !== undefined) {
+        merged[k] = v
+      }
+    }
+  }
+
+  // missing_fields = fields ที่ยังว่างแม้หลัง merge
+  const allFound = new Set(
+    results.flatMap((r) =>
+      Object.entries(r.form_data)
+        .filter(([, v]) => v !== '' && v !== null && v !== undefined)
+        .map(([k]) => k)
+    )
+  )
+  const missing_fields = [
+    ...new Set(results.flatMap((r) => r.missing_fields)),
+  ].filter((f) => !allFound.has(f))
+
+  const low_confidence_fields = [
+    ...new Set(results.flatMap((r) => r.low_confidence_fields)),
+  ]
+
+  return {
+    case_type:            best.case_type,
+    detection_confidence: best.detection_confidence,
+    detection_note:       results.map((r) => r.detection_note).filter(Boolean).join(' / '),
+    form_data:            merged as Partial<FormData>,
+    missing_fields,
+    low_confidence_fields,
+    confidence: {
+      overall:    Math.min(...results.map((r) => r.confidence.overall)),
+      low_fields: low_confidence_fields,
+    },
+    pages_read:    results.reduce((s, r) => s + r.pages_read, 0),
+    model:         best.model,
+    input_tokens:  results.reduce((s, r) => s + r.input_tokens, 0),
+    output_tokens: results.reduce((s, r) => s + r.output_tokens, 0),
+    cost_usd:      results.reduce((s, r) => s + r.cost_usd, 0),
+  }
+}
+
+// ──────────────────────────────────────────────────────────────
+// geminiOcrChunked — แบ่ง images ทีละ chunkSize แล้วเรียกแบบ parallel
+// ──────────────────────────────────────────────────────────────
+export async function geminiOcrChunked(
+  base64Images: string[],
+  label: 'new' | 'old' = 'new',
+  chunkSize = 2
+): Promise<GeminiExtractResult> {
+  if (base64Images.length <= chunkSize) {
+    return geminiOcr(base64Images, label)
+  }
+
+  const chunks: string[][] = []
+  for (let i = 0; i < base64Images.length; i += chunkSize) {
+    chunks.push(base64Images.slice(i, i + chunkSize))
+  }
+
+  console.log(
+    `[gemini-ocr] chunked label=${label} total=${base64Images.length} chunks=${chunks.length} chunkSize=${chunkSize}`
+  )
+
+  const results = await Promise.all(
+    chunks.map((chunk) => geminiOcr(chunk, label))
+  )
+
+  const merged = mergeChunkResults(results)
+  console.log(
+    `[gemini-ocr] merged chunks=${chunks.length}`,
+    `case_type=${merged.case_type}`,
+    `confidence=${merged.detection_confidence}%`,
+    `cost=$${merged.cost_usd.toFixed(5)}`
+  )
+  return merged
+}
+
 // detect mime type จาก data URL prefix
 function detectMimeType(b64: string): string {
   if (b64.startsWith('data:image/png'))  return 'image/png'
