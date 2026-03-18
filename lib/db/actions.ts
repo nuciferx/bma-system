@@ -162,12 +162,16 @@ export async function getRecentBuildings(limit = 20) {
   const supabase = getClient()
   const { data, error } = await supabase
     .from('buildings')
-    .select('*')
+    .select(`
+      building_id, permit_no, permit_form, owner_name, building_desc,
+      permit_expire, location_district,
+      actions(action_id, case_type, doc_date, created_at)
+    `)
     .order('created_at', { ascending: false })
     .limit(limit)
 
   if (error) throw new Error(`getRecentBuildings: ${error.message}`)
-  return (data ?? []) as Building[]
+  return data ?? []
 }
 
 export async function getBuildingDetail(buildingId: string) {
