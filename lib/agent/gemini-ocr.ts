@@ -6,11 +6,10 @@
 
 import type { CaseType, FormData } from '@/types'
 
-const GEMINI_MODEL = 'gemini-3-flash-preview'
+const MODEL = 'gemini-3-flash-preview'
 
-// gemini-2.5-flash pricing
-const COST_INPUT_PER_1M  = 0.50
-const COST_OUTPUT_PER_1M = 3.00
+// gemini-3-flash pricing
+const PRICING = { input: 0.50, output: 3.00 }
 
 export interface GeminiExtractResult {
   case_type: CaseType
