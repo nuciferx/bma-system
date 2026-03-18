@@ -7,7 +7,6 @@
 import type { CaseType, FormData } from '@/types'
 
 const GEMINI_MODEL = 'gemini-3-flash-preview'
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`
 
 // gemini-2.5-flash pricing
 const COST_INPUT_PER_1M  = 0.50
