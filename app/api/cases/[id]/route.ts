@@ -12,7 +12,20 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    const data = await getBuildingDetail(id)
+    const raw = await getBuildingDetail(id)
+    if (!raw) return NextResponse.json({ success: false, error: 'not found' }, { status: 404 })
+
+    const { actions, attachments, ...buildingFields } = raw as Record<string, unknown> & {
+      actions?: unknown[]
+      attachments?: unknown[]
+    }
+
+    const data = {
+      building: buildingFields,
+      actions: (actions ?? []) as Action[],
+      attachments: attachments ?? [],
+    }
+
     return NextResponse.json({ success: true, data })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
