@@ -43,6 +43,7 @@ function CaseDetailContent() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'info' | 'history' | 'docs'>('info')
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [supNoticeLoading, setSupNoticeLoading] = useState(false)
   const [supNoticeError, setSupNoticeError] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -306,6 +307,53 @@ function CaseDetailContent() {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Image Gallery — แสดงในแท็บครั้งล่าสุด */}
+          {activeTab === 'info' && latestAction && (() => {
+            const snap = latestAction.form_data_snapshot as unknown as Record<string, unknown> | null
+            const imgUrls = (snap?.image_urls as string[] | undefined) ?? []
+            if (imgUrls.length === 0) return null
+            return (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+                <p className="text-xs font-bold text-slate-500 mb-3">เอกสารต้นฉบับ ({imgUrls.length} หน้า)</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {imgUrls.map((url, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setLightboxUrl(url)}
+                      className="relative rounded-xl overflow-hidden border border-slate-200 hover:border-blue-400 transition-colors group"
+                    >
+                      <img src={url} alt={`หน้า ${i + 1}`} className="w-full h-32 object-contain bg-slate-50" />
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs text-center py-1 font-medium">
+                        หน้า {i + 1}
+                      </div>
+                      <div className="absolute inset-0 bg-blue-500/0 group-hover:bg-blue-500/10 transition-colors flex items-center justify-center">
+                        <span className="opacity-0 group-hover:opacity-100 text-blue-600 text-2xl transition-opacity">🔍</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* Lightbox */}
+          {lightboxUrl && (
+            <div
+              className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+              onClick={() => setLightboxUrl(null)}
+            >
+              <div className="relative max-w-4xl max-h-full" onClick={e => e.stopPropagation()}>
+                <img src={lightboxUrl} alt="เอกสารต้นฉบับ" className="max-h-[90vh] max-w-full object-contain rounded-xl" />
+                <button
+                  onClick={() => setLightboxUrl(null)}
+                  className="absolute top-2 right-2 bg-black/50 hover:bg-black/70 text-white w-8 h-8 rounded-full flex items-center justify-center text-lg transition-colors"
+                >
+                  ×
+                </button>
+              </div>
             </div>
           )}
 

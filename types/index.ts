@@ -116,6 +116,9 @@ export interface FormData {
   complaint: 'none' | 'found'
   complaint_detail?: string
 
+  // รูปต้นฉบับที่สแกน — เก็บ URL จาก Supabase Storage
+  image_urls?: string[]
+
   // AI token usage — บันทึกพร้อม form เพื่อรวม cost ใน dashboard
   token_usage?: {
     gemini_input: number

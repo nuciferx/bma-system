@@ -81,9 +81,9 @@ export async function GET(req: NextRequest) {
 }
 
 // ─── POST /api/cases ─────────────────────────────────────────
-// body: { formData, caseType, saveToDb }
+// body: { formData, caseType, saveToDb, doc_images? }
 export async function POST(req: NextRequest) {
-  let body: { formData: FormData; caseType?: CaseType; saveToDb?: boolean }
+  let body: { formData: FormData; caseType?: CaseType; saveToDb?: boolean; doc_images?: string[] }
 
   try {
     body = (await req.json()) as typeof body
@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { formData, caseType = 'A', saveToDb = true } = body
+  const { formData, caseType = 'A', saveToDb = true, doc_images } = body
 
   if (!formData) {
     return NextResponse.json({ error: 'formData is required' }, { status: 400 })
@@ -145,44 +145,71 @@ export async function POST(req: NextRequest) {
   const { data: urlData } = supabase.storage.from('documents').getPublicUrl(storagePath)
   const doc_url = urlData.publicUrl
 
+  // Upload doc images to Supabase Storage (ถ้ามี)
+  const imageUrls: string[] = []
+  if (doc_images && doc_images.length > 0) {
+    const imagePrefix = `images/${Date.now()}`
+    for (let i = 0; i < doc_images.length; i++) {
+      const b64 = doc_images[i]
+      const mimeMatch = b64.match(/^data:(image\/\w+);base64,/)
+      const mimeType = mimeMatch?.[1] ?? 'image/jpeg'
+      const ext = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg'
+      const data = b64.replace(/^data:image\/\w+;base64,/, '')
+      const buffer = Buffer.from(data, 'base64')
+      const imgPath = `${imagePrefix}/page-${i + 1}.${ext}`
+      const { error: imgErr } = await supabase.storage
+        .from('documents')
+        .upload(imgPath, buffer, { contentType: mimeType, upsert: false })
+      if (!imgErr) {
+        const { data: imgUrlData } = supabase.storage.from('documents').getPublicUrl(imgPath)
+        imageUrls.push(imgUrlData.publicUrl)
+      }
+    }
+  }
+
+  // รวม image_urls เข้า formData ก่อน save
+  const formDataWithImages: FormData = imageUrls.length > 0
+    ? { ...formData, image_urls: imageUrls }
+    : formData
+
   // Build building + action objects
   const building: Omit<Building, 'building_id' | 'created_at'> = {
-    permit_no: formData.permit_no,
-    permit_form: formData.permit_form,
-    permit_date: formData.permit_date,
-    owner_name: formData.owner_name,
-    owner_rep: formData.owner_rep,
-    building_desc: formData.building_desc,
-    location_soi: formData.location_soi,
-    location_road: formData.location_road,
-    location_subdistrict: formData.location_subdistrict,
-    location_district: formData.location_district,
-    permit_expire: formData.permit_expire,
-    original_supervisors: formData.original_supervisors,
+    permit_no: formDataWithImages.permit_no,
+    permit_form: formDataWithImages.permit_form,
+    permit_date: formDataWithImages.permit_date,
+    owner_name: formDataWithImages.owner_name,
+    owner_rep: formDataWithImages.owner_rep,
+    building_desc: formDataWithImages.building_desc,
+    location_soi: formDataWithImages.location_soi,
+    location_road: formDataWithImages.location_road,
+    location_subdistrict: formDataWithImages.location_subdistrict,
+    location_district: formDataWithImages.location_district,
+    permit_expire: formDataWithImages.permit_expire,
+    original_supervisors: formDataWithImages.original_supervisors,
   }
 
   const action: Omit<Action, 'action_id' | 'building_id' | 'created_at'> = {
     case_type: caseType,
-    renew_count: formData.renew_count,
-    renew_from: formData.renew_from,
-    renew_to: formData.renew_to,
-    receipt_no: formData.receipt_no,
-    receipt_date: formData.receipt_date,
-    supervisors_snapshot: formData.original_supervisors,
-    supervisor_changes: formData.supervisor_changes,
-    supervisor_history: formData.supervisor_history,
+    renew_count: formDataWithImages.renew_count,
+    renew_from: formDataWithImages.renew_from,
+    renew_to: formDataWithImages.renew_to,
+    receipt_no: formDataWithImages.receipt_no,
+    receipt_date: formDataWithImages.receipt_date,
+    supervisors_snapshot: formDataWithImages.original_supervisors,
+    supervisor_changes: formDataWithImages.supervisor_changes,
+    supervisor_history: formDataWithImages.supervisor_history,
     ack_doc_no: '',
     ack_doc_date: '',
-    fee: formData.fee,
-    eia_status: formData.eia_status,
-    eia_doc_no: formData.eia_doc_no,
-    eia_doc_date: formData.eia_doc_date,
-    construction_status: formData.construction_status,
-    complaint: formData.complaint,
-    complaint_detail: formData.complaint_detail,
-    form_data_snapshot: formData,
+    fee: formDataWithImages.fee,
+    eia_status: formDataWithImages.eia_status,
+    eia_doc_no: formDataWithImages.eia_doc_no,
+    eia_doc_date: formDataWithImages.eia_doc_date,
+    construction_status: formDataWithImages.construction_status,
+    complaint: formDataWithImages.complaint,
+    complaint_detail: formDataWithImages.complaint_detail,
+    form_data_snapshot: formDataWithImages,
     doc_url,
-    doc_date: formData.doc_date,
+    doc_date: formDataWithImages.doc_date,
   }
 
   try {

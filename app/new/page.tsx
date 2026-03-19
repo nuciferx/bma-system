@@ -6,10 +6,10 @@ import UploadZone from '@/components/UploadZone'
 import TypeBanner from '@/components/TypeBanner'
 import SupervisorList from '@/components/SupervisorList'
 import ThaiDatePicker from '@/components/ThaiDatePicker'
-import type { OcrRequest, OcrResponse, FormData, CaseType, Supervisor } from '@/types'
+import type { OcrRequest, OcrResponse, FormData, CaseType, Supervisor, SupervisorChange } from '@/types'
 import TokenUsageCard, { type TokenUsage } from '@/components/TokenUsageCard'
 
-type Step = 'upload' | 'review'
+type Step = 'upload' | 'preview' | 'review'
 
 const EMPTY_FORM: FormData = {
   doc_date: '',
@@ -121,6 +121,9 @@ export default function NewCasePage() {
   const [typeConfirmed, setTypeConfirmed] = useState(false)
   const [missingFields, setMissingFields] = useState<string[]>([])
 
+  const [ocrResult, setOcrResult] = useState<OcrResponse | null>(null)
+  const [lowConfidenceFields, setLowConfidenceFields] = useState<string[]>([])
+
   const [form, setForm] = useState<FormData>({ ...EMPTY_FORM })
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -155,18 +158,20 @@ export default function NewCasePage() {
       setConfidence(data.detection_confidence)
       setDetectionNote(data.detection_note)
       setMissingFields(data.missing_fields ?? [])
+      setLowConfidenceFields(data.low_confidence_fields ?? [])
       const usage: TokenUsage = {
         ...data.token_usage,
         pages_read: uploadedImages.length,
         model: data.model,
       }
       setTokenUsage(usage)
+      setOcrResult(data)
       setForm({
         ...EMPTY_FORM,
         ...data.form_data,
         token_usage: usage,
       })
-      setStep('review')
+      setStep('preview')
     } catch (e) {
       setOcrError(e instanceof Error ? e.message : 'OCR ล้มเหลว')
     } finally {
@@ -182,7 +187,12 @@ export default function NewCasePage() {
       const res = await fetch('/api/cases', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ formData: form, caseType, saveToDb: true }),
+        body: JSON.stringify({
+          formData: form,
+          caseType,
+          saveToDb: true,
+          doc_images: uploadedImages.length > 0 ? uploadedImages : undefined,
+        }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
@@ -216,6 +226,159 @@ export default function NewCasePage() {
             className="w-full py-3 border-2 border-dashed border-slate-300 hover:border-blue-400 text-slate-500 hover:text-blue-600 rounded-2xl text-sm font-medium transition-all hover:bg-blue-50"
           >
             ✏️ กรอกข้อมูลเองโดยไม่สแกน
+          </button>
+        </main>
+      </div>
+    )
+  }
+
+  // ── OCR Preview Step ────────────────────────────────────────
+  if (step === 'preview' && ocrResult) {
+    const previewFields: Array<{ key: string; label: string; value: unknown }> = [
+      { key: 'owner_name',            label: 'ชื่อเจ้าของ / นิติบุคคล',    value: ocrResult.form_data.owner_name },
+      { key: 'permit_no',             label: 'เลขที่ใบอนุญาต',              value: ocrResult.form_data.permit_no },
+      { key: 'permit_form',           label: 'แบบใบอนุญาต',                value: ocrResult.form_data.permit_form },
+      { key: 'permit_date',           label: 'วันที่ออกใบอนุญาต',           value: ocrResult.form_data.permit_date },
+      { key: 'permit_expire',         label: 'วันสิ้นอายุ',                 value: ocrResult.form_data.permit_expire },
+      { key: 'building_desc',         label: 'รายละเอียดอาคาร',             value: ocrResult.form_data.building_desc },
+      { key: 'location_road',         label: 'ถนน',                        value: ocrResult.form_data.location_road },
+      { key: 'location_district',     label: 'เขต',                        value: ocrResult.form_data.location_district },
+      { key: 'receipt_no',            label: 'เลขรับ',                      value: ocrResult.form_data.receipt_no },
+      { key: 'receipt_date',          label: 'วันที่รับ',                   value: ocrResult.form_data.receipt_date },
+      { key: 'renew_count',           label: 'ต่ออายุครั้งที่',              value: ocrResult.form_data.renew_count },
+      { key: 'fee',                   label: 'ค่าธรรมเนียม (บาท)',          value: ocrResult.form_data.fee },
+      { key: 'renew_from',            label: 'ต่ออายุตั้งแต่',               value: ocrResult.form_data.renew_from },
+      { key: 'renew_to',              label: 'ถึงวันที่',                   value: ocrResult.form_data.renew_to },
+    ]
+
+    const CASE_TYPE_LABELS: Record<string, string> = {
+      A: 'ต่ออายุ อ.1', B: 'ต่ออายุ อ.1 + แจ้งชื่อผู้ควบคุม',
+      C: 'ต่ออายุ อ.1 + เปลี่ยนผู้ควบคุม', BC: 'ต่ออายุ อ.1 + แจ้งและเปลี่ยน',
+      D: 'ต่ออายุ ยผ.4', E: 'ต่ออายุ ยผ.4 + แจ้งชื่อ', F: 'ต่ออายุ ยผ.4 + เปลี่ยนผู้ควบคุม',
+    }
+
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center gap-4 sticky top-0 z-10 shadow-sm">
+          <button onClick={() => setStep('upload')} className="text-slate-400 hover:text-slate-600 transition-colors text-xl">←</button>
+          <div className="flex-1">
+            <h1 className="text-base font-bold text-slate-800 leading-none">ผลการวิเคราะห์เอกสาร</h1>
+            <p className="text-xs text-slate-400 mt-0.5">ตรวจสอบข้อมูลที่อ่านได้ก่อนกรอกฟอร์ม</p>
+          </div>
+          <button
+            onClick={() => { setTypeConfirmed(false); setStep('review') }}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white transition-all shadow-md hover:shadow-lg"
+          >
+            ดำเนินการต่อ →
+          </button>
+        </header>
+
+        <main className="max-w-2xl mx-auto px-4 py-6 space-y-5">
+          {/* Case type detected */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">ประเภทเรื่องที่ตรวจพบ</p>
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
+                ocrResult.detection_confidence >= 80 ? 'bg-green-100 text-green-700' :
+                ocrResult.detection_confidence >= 60 ? 'bg-amber-100 text-amber-700' :
+                'bg-red-100 text-red-700'
+              }`}>
+                {ocrResult.detection_confidence}% confidence
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-2xl font-black text-blue-600">{ocrResult.case_type}</span>
+              <span className="text-sm text-slate-600">{CASE_TYPE_LABELS[ocrResult.case_type] ?? 'ไม่ระบุ'}</span>
+            </div>
+            {ocrResult.detection_note && (
+              <p className="text-xs text-slate-400 mt-2">{ocrResult.detection_note}</p>
+            )}
+          </div>
+
+          {/* Warnings */}
+          {(missingFields.length > 0 || lowConfidenceFields.length > 0) && (
+            <div className="space-y-2">
+              {missingFields.length > 0 && (
+                <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+                  <span className="mt-0.5 flex-shrink-0">🔴</span>
+                  <div><span className="font-semibold">ไม่พบในเอกสาร ({missingFields.length} ช่อง):</span> {missingFields.join(', ')}</div>
+                </div>
+              )}
+              {lowConfidenceFields.length > 0 && (
+                <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
+                  <span className="mt-0.5 flex-shrink-0">🟡</span>
+                  <div><span className="font-semibold">อ่านได้ไม่แน่ใจ ({lowConfidenceFields.length} ช่อง):</span> {lowConfidenceFields.join(', ')}</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Field table */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
+              <h3 className="text-sm font-bold text-slate-700">ข้อมูลที่อ่านได้</h3>
+            </div>
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-slate-100">
+                {previewFields.map(({ key, label, value }) => {
+                  const isEmpty = !value || value === ''
+                  const isLowConf = lowConfidenceFields.includes(key)
+                  const isMissing = missingFields.includes(key) || isEmpty
+                  return (
+                    <tr
+                      key={key}
+                      className={
+                        isMissing ? 'bg-red-50' :
+                        isLowConf ? 'bg-amber-50' :
+                        'bg-white'
+                      }
+                    >
+                      <td className="px-5 py-2.5 text-xs font-semibold text-slate-500 w-44">{label}</td>
+                      <td className="px-5 py-2.5 text-slate-800 font-medium">
+                        {isEmpty ? (
+                          <span className="text-red-400 text-xs italic">ไม่พบข้อมูล</span>
+                        ) : (
+                          <span>{String(value)}</span>
+                        )}
+                        {isLowConf && !isEmpty && (
+                          <span className="ml-2 text-[10px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full">ไม่แน่ใจ</span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Supervisor changes summary */}
+          {(ocrResult.form_data.supervisor_changes ?? []).length > 0 && (
+            <div className="bg-white rounded-2xl border border-orange-200 shadow-sm overflow-hidden">
+              <div className="px-5 py-3 border-b border-orange-100 bg-orange-50">
+                <h3 className="text-sm font-bold text-orange-800">การแจ้ง/เปลี่ยนผู้ควบคุม ({(ocrResult.form_data.supervisor_changes ?? []).length} รายการ)</h3>
+              </div>
+              <div className="px-5 py-3 space-y-2">
+                {(ocrResult.form_data.supervisor_changes ?? []).map((sc: SupervisorChange, i: number) => (
+                  <div key={i} className="text-sm text-slate-700">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold mr-2 ${sc.action === 'new' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
+                      {sc.action === 'new' ? 'แจ้งชื่อใหม่' : 'เปลี่ยนตัว'}
+                    </span>
+                    {sc.action === 'new'
+                      ? (sc.new_supervisors ?? []).map(s => s.name).join(', ')
+                      : `${sc.from_supervisor?.name ?? ''} → ${sc.to_supervisor?.name ?? ''}`
+                    }
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Continue button */}
+          <button
+            onClick={() => { setTypeConfirmed(false); setStep('review') }}
+            className="w-full py-4 rounded-2xl text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white transition-all shadow-lg hover:shadow-xl hover:scale-[1.01] active:scale-[0.99]"
+          >
+            ดำเนินการต่อ → กรอกฟอร์ม
           </button>
         </main>
       </div>
